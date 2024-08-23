@@ -63,7 +63,7 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 @app.route("/")
-# @login_required
+@login_required
 def index():
     # if request.method == "GET":
         # posts = Post.query.all()
@@ -130,14 +130,14 @@ def auth():
 #         return render_template("login.html")
         
 @app.route("/logout")
-# @login_required
+@login_required
 def logout():
     logout_user()
     return redirect("/auth")
 
 
 @app.route("/create", methods=["GET", "POST"])
-# @login_required
+@login_required
 def create():
     if request.method == "POST":
         title = request.form.get("title")
@@ -171,7 +171,7 @@ def create():
 
     
 @app.route("/<int:id>/update", methods=["GET", "POST"])
-# @login_required
+@login_required
 def update(id):
     post = Post.query.get(id)
     if request.method == "GET":
@@ -185,7 +185,7 @@ def update(id):
         return redirect("/")
     
 @app.route("/<int:id>/delete")
-# @login_required
+@login_required
 def delete(id):
     post = Post.query.get(id)
     db.session.delete(post)
