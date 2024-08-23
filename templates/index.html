@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+
+
+  <div class="box0 row">
+
+        <div class="box1 col-4">
+          <h1>side-bar</h1>
+        </div>
+
+        <div class="box2 col-8">            
+              <h1>ブログアプリケーション</h1> 
+              <a href="/create" role="button">新規作成画面</a>
+              <a href="/logout" role="button">ログアウト</a>           
+        </div>
+   </div>
+
+
+
+
+
+<!-- <div class="container"> -->
+
+      <div class="row">
+
+            <div class="box3 col-4">
+              {% for post in posts %}
+              <h3>{{ post.title }}</h3>   
+              <p>カテゴリー: {{ post.category.name }}</p>            
+              <h4>{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</h4>
+              {% endfor %}             
+              
+            </div>
+
+            <div class="box4 col-8">
+
+                <div>
+                  <h1>投稿</h1>                  
+                </div>
+
+                <div>
+                  <article>
+                    {% for post in posts %}
+                      <div class="box5 mt-2">    
+                           
+                        <h2>{{ post.title }}</h2>
+                        <a href="/{{post.id}}/update" role="button">編集</a>
+                        <a href="/{{post.id}}/delete" role="button">削除</a>
+                        <p>カテゴリー: {{ post.category.name }}</p> 
+                        <p>作成日時: {{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                        <p>{{ post.body }}</p>
+                      </div>
+                      <div class="box6 mb-5"> 
+                        {% if post.image_url %}
+                        <!-- <img src="{{ post.image_url }}" alt="Post Image"> -->
+                        <!-- <img src="{{ post.image_url }}" alt="Post Image" style="max-width: 100%; height: auto;"> -->
+                        <img class="img-fluid" src="{{ post.image_url }}" alt="Post Image">
+                        {% endif %}
+                      </div>
+                      {% endfor %}
+                  </article>
+                </div>
+                
+            </div>
+    </div>
+<!-- </div> -->
+
+{% endblock %}
