@@ -4,11 +4,11 @@
 
   <div class="box0 row">
 
-        <div class="box1 col-4">
+        <div class="box1 col-3">
           <h1>OKAME</h1>
         </div>
 
-        <div class="box2 col-8">            
+        <div class="box2 col-9">            
               <h1>ブログアプリケーション</h1> 
               <a href="/create" role="button">新規作成画面</a>
               <a href="/logout" role="button">ログアウト</a>           
@@ -23,7 +23,7 @@
 
       <div class="row">
 
-            <div class="box3 col-4">
+            <div class="box3 col-3">
               {% for post in posts %}
               <h3>{{ post.title }}</h3>   
               <p>カテゴリー: {{ post.category.name }}</p>            
@@ -32,7 +32,7 @@
               
             </div>
 
-            <div class="box4 col-8">
+            <div class="box4 col-9">
 
                 <div>
                   <h1>投稿</h1>                  
