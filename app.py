@@ -113,6 +113,11 @@ class User(UserMixin, db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+class LoginForm(FlaskForm):
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Login')
+
 @app.route("/")
 @login_required
 def index():
@@ -122,18 +127,19 @@ def index():
     return render_template("index.html", posts=posts)
     # return render_template("index.html")
 
-@app.route('/register', methods=['GET','POST'])
-def register():
+@app.route('/signup', methods=['GET','POST'])
+def signup():
     print(current_user)
     form = RegistrationForm()    
 
     if form.validate_on_submit():
+        hashed_password = generate_password_hash(form.password.data, method='pbkdf2:sha256')
         user = User(
             email=form.email.data,
             user_name=form.user_name.data,
             display_name=form.display_name.data,
             furigana=form.furigana.data,
-            password=form.password.data,  # パスワードはハッシュ化が推奨されます
+            password=hashed_password,  # ハッシュ化されたパスワードを使用
             gender=form.gender.data,
             date_of_birth=form.date_of_birth.data,
             administrator="0"  # もしadministratorフィールドが必要であれば
@@ -141,42 +147,15 @@ def register():
         db.session.add(user)
         db.session.commit()
         flash('ユーザーが登録されました')
-        return redirect(url_for('users.login'))
-    return render_template('register.html', form=form)
-
-# @app.route("/auth", methods=["GET", "POST"])
-# def auth():
-#     if request.method == "POST":
-#         action = request.form.get("action")
-#         user_name = request.form.get("user_name")
-#         password = request.form.get("password")
-
-#         if action == "signup":
-#             # サインアップ処理
-#             user = User(user_name=user_name, password=generate_password_hash(password, method="pbkdf2:sha256"))
-#             db.session.add(user)
-#             db.session.commit()
-#             flash("アカウントが作成されました。ログインしてください。", "success")
-#             return redirect("/auth")
-        
-#         elif action == "login":
-#             # ログイン処理
-#             user = User.query.filter_by(user_name=user_name).first()
-#             if user is not None and check_password_hash(user.password, password):
-#                 login_user(user)
-#                 return redirect("/")
-#             else:
-#                 flash("ユーザー名かパスワードが間違っています", "error")
-#                 return redirect("/auth")
-
-#     return render_template("auth.html")
+        return redirect(url_for('login'))
+    return render_template('signup.html', form=form)
 
         
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
-    return redirect("/auth")
+    return redirect("/login")
 
 
 @app.route("/create", methods=["GET", "POST"])
@@ -212,6 +191,22 @@ def create():
     return render_template("create.html", categories=categories)
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    form = LoginForm()
+    if request.method == "POST" and form.validate_on_submit():
+        email = form.email.data
+        password = form.password.data  
+
+        user = User.query.filter_by(email=email).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            return redirect("/")
+        else:
+                flash("Invalid email or password")  # フィードバックを提供
+                return redirect("/login")
+        
+    return render_template("login.html", form=form)
     
 @app.route("/<int:id>/update", methods=["GET", "POST"])
 @login_required
