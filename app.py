@@ -1,17 +1,20 @@
 from flask import Flask
-from flask import render_template, request, redirect, url_for, flash
+from flask_wtf import FlaskForm
+from flask import render_template, request, redirect, url_for, flash, request, abort
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin, LoginManager, login_user,logout_user, login_required
+from flask_login import UserMixin, LoginManager, login_user,logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+from wtforms import ValidationError, StringField, PasswordField, SubmitField, SelectField, DateField
+from wtforms.validators import DataRequired, Email, EqualTo, Length
+import pytz
 import os
 import boto3
-from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import uuid
 from flask_migrate import Migrate
+from datetime import datetime, date
 
-from datetime import datetime
-import pytz
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 
@@ -38,6 +41,26 @@ login_manager.init_app(app)
 def tokyo_time():
     return datetime.now(pytz.timezone('Asia/Tokyo'))
 
+class RegistrationForm(FlaskForm):
+    display_name = StringField('表示ネーム', validators=[DataRequired(), Length(min=3, max=30)])
+    user_name = StringField('ユーザー名', validators=[DataRequired()])
+    furigana = StringField('フリガナ', validators=[DataRequired()])
+    email = StringField('メールアドレス', validators=[DataRequired(), Email(message='正しいメールアドレスを入力してください')])
+    email_confirm = StringField('メールアドレス確認', validators=[DataRequired(), Email(), EqualTo('email', message='メールアドレスが一致していません')])
+    password = PasswordField('パスワード', validators=[DataRequired(), Length(min=8), EqualTo('pass_confirm', message='パスワードが一致していません')])
+    pass_confirm = PasswordField('パスワード(確認)', validators=[DataRequired()])
+    gender = SelectField('性別', choices=[('male', '男性'), ('female', '女性'), ('other', 'その他'), ('prefer_not_to_say', '答えたくない')], validators=[DataRequired()])
+    date_of_birth = DateField('生年月日', format='%Y-%m-%d', validators=[DataRequired()])
+    submit = SubmitField('登録')
+
+    def validate_display_name(self, field):
+        if User.query.filter_by(display_name=field.data).first():
+            raise ValidationError('入力された表示ネームは既に使われています。')
+
+    def validate_email(self, field):
+        if User.query.filter_by(email=field.data).first():
+            raise ValidationError('入力されたメールアドレスは既に登録されています。')
+
 
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -53,10 +76,38 @@ class Post(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=tokyo_time)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
 
+
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(30), unique=True)
-    password = db.Column(db.String(128))
+    
+    # サインアップフィールド
+    display_name = db.Column(db.String(30), unique=True, nullable=False)  # 表示ネーム
+    user_name = db.Column(db.String(100), nullable=False)  # 名前
+    furigana = db.Column(db.String(100), nullable=False)  # フリガナ
+    email = db.Column(db.String(120), unique=True, nullable=False)  # メールアドレス
+    password = db.Column(db.String(128), nullable=False)  # パスワード
+    gender = db.Column(db.String(20), nullable=True)  # 性別
+    date_of_birth = db.Column(db.Date, nullable=False)  # 生年月日
+    administrator = db.Column(db.String(1), nullable=False, default="0")
+    
+    def __init__(self, display_name, user_name, furigana, email, password, gender, date_of_birth, administrator="0"):
+        self.display_name = display_name
+        self.user_name = user_name
+        self.furigana = furigana
+        self.email = email
+        self.password = password  # パスワードはハッシュ化することが推奨されます
+        self.gender = gender
+        self.date_of_birth = date_of_birth
+        self.administrator = administrator
+                            
+
+    def __repr__(self):
+        return f'<User {self.display_name}>'
+
+    def age(self):
+        today = date.today()
+        return today.year - self.date_of_birth.year - ((today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day))
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -71,63 +122,55 @@ def index():
     return render_template("index.html", posts=posts)
     # return render_template("index.html")
 
-@app.route("/auth", methods=["GET", "POST"])
-def auth():
-    if request.method == "POST":
-        action = request.form.get("action")
-        username = request.form.get("username")
-        password = request.form.get("password")
+@app.route('/register', methods=['GET','POST'])
+def register():
+    print(current_user)
+    form = RegistrationForm()    
 
-        if action == "signup":
-            # サインアップ処理
-            user = User(username=username, password=generate_password_hash(password, method="pbkdf2:sha256"))
-            db.session.add(user)
-            db.session.commit()
-            flash("アカウントが作成されました。ログインしてください。", "success")
-            return redirect("/auth")
+    if form.validate_on_submit():
+        user = User(
+            email=form.email.data,
+            user_name=form.user_name.data,
+            display_name=form.display_name.data,
+            furigana=form.furigana.data,
+            password=form.password.data,  # パスワードはハッシュ化が推奨されます
+            gender=form.gender.data,
+            date_of_birth=form.date_of_birth.data,
+            administrator="0"  # もしadministratorフィールドが必要であれば
+        )
+        db.session.add(user)
+        db.session.commit()
+        flash('ユーザーが登録されました')
+        return redirect(url_for('users.login'))
+    return render_template('register.html', form=form)
+
+# @app.route("/auth", methods=["GET", "POST"])
+# def auth():
+#     if request.method == "POST":
+#         action = request.form.get("action")
+#         user_name = request.form.get("user_name")
+#         password = request.form.get("password")
+
+#         if action == "signup":
+#             # サインアップ処理
+#             user = User(user_name=user_name, password=generate_password_hash(password, method="pbkdf2:sha256"))
+#             db.session.add(user)
+#             db.session.commit()
+#             flash("アカウントが作成されました。ログインしてください。", "success")
+#             return redirect("/auth")
         
-        elif action == "login":
-            # ログイン処理
-            user = User.query.filter_by(username=username).first()
-            if user is not None and check_password_hash(user.password, password):
-                login_user(user)
-                return redirect("/")
-            else:
-                flash("ユーザー名かパスワードが間違っています", "error")
-                return redirect("/auth")
+#         elif action == "login":
+#             # ログイン処理
+#             user = User.query.filter_by(user_name=user_name).first()
+#             if user is not None and check_password_hash(user.password, password):
+#                 login_user(user)
+#                 return redirect("/")
+#             else:
+#                 flash("ユーザー名かパスワードが間違っています", "error")
+#                 return redirect("/auth")
 
-    return render_template("auth.html")
+#     return render_template("auth.html")
 
-
-# @app.route("/signup", methods=["GET", "POST"])
-# def signup():
-#     if request.method == "POST":
-#         username = request.form.get("username")
-#         password = request.form.get("password")
-#         user = User(username=username, password=generate_password_hash(password, method="pbkdf2:sha256"))
-       
-#         db.session.add(user)
-#         db.session.commit()
-
-#         return redirect("/login")
-#     else:
-#         return render_template("signup.html")
-    
-# @app.route("/login", methods=["GET", "POST"])
-# def login():
-#     if request.method == "POST":
-#         username = request.form.get("username")
-#         password = request.form.get("password")
-
-#         user = User.query.filter_by(username=username).first()
-#         if user is not None and check_password_hash(user.password, password):
-#             login_user(user)
-#             return redirect("/")
-#         else:
-#             flash("ユーザー名かパスワードが間違っています", "error")
-#             return redirect("/login")
-#     else:
-#         return render_template("login.html")
         
 @app.route("/logout")
 @login_required
