@@ -15,14 +15,18 @@
                             <div class="mb-3">
                                 {{ render_field(form.email, placeholder="メールアドレス", class="form-control form-control-lg") }}
                             </div>
-                                                      
                             
                             <div class="mb-3">
                                 {{ render_field(form.password, placeholder="パスワード", class="form-control form-control-lg") }}
                             </div>                        
                             
-                            
                             {{ form.submit(class="btn btn-outline-light w-100") }}
+                            
+                            <!-- Signupページに行くボタン -->
+                            <div class="d-grid mt-3">
+                                <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">はじめての方はサインアップページ</a>
+                            </div>
+                           
                         </form>
                     </div>
                 </div>
