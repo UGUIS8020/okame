@@ -13,6 +13,8 @@ from werkzeug.utils import secure_filename
 import uuid
 from flask_migrate import Migrate
 from datetime import datetime, date
+from PIL import Image
+import io
 
 from dotenv import load_dotenv
 
@@ -172,8 +174,26 @@ def create():
             original_filename = secure_filename(image.filename)
             # ファイル名にユニークなIDを追加して変更
             unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
+
+
+            # 画像を開く
+            img = Image.open(image)
+            max_width = 1500  # 最大横幅を1500pxに設定
+
+            # 画像の横幅が1500pxを超えている場合に縮小
+            if img.width > max_width:
+                # 新しい高さを計算して、アスペクト比を維持したままリサイズ
+                new_height = int((max_width / img.width) * img.height)
+                img = img.resize((max_width, new_height), Image.LANCZOS)
+
+             # リサイズされた画像をバイトIOオブジェクトに保存
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='JPEG')  # JPEGフォーマットで保存（必要に応じて他のフォーマットを使用）
+            img_byte_arr.seek(0)
+
+            # リサイズされた画像をS3にアップロード
             s3.upload_fileobj(
-                image,
+                img_byte_arr,
                 app.config['S3_BUCKET'],
                 unique_filename
             )
