@@ -178,9 +178,9 @@ def create():
 
             # 画像を読み込む
             img = Image.open(image)
-            max_width = 1500  # 最大横幅を1500pxに設定
+            max_width = 1300  # 最大横幅を1300pxに設定
 
-            # 画像の横幅が1500pxを超えている場合に縮小
+            # 画像の横幅が1300pxを超えている場合に縮小
             if img.width > max_width:
                 # アスペクト比を維持したままリサイズ
                 new_height = int((max_width / img.width) * img.height)                
