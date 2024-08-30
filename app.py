@@ -14,8 +14,7 @@ import uuid
 from flask_migrate import Migrate
 from datetime import datetime, date
 import io
-import cv2
-import numpy as np
+from PIL import Image
 
 from dotenv import load_dotenv
 
@@ -177,21 +176,22 @@ def create():
             unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
 
 
-             # 画像を読み込む
-            img = cv2.imdecode(np.frombuffer(image.read(), np.uint8), cv2.IMREAD_COLOR)
+            # 画像を読み込む
+            img = Image.open(image)
             max_width = 1500  # 最大横幅を1500pxに設定
 
-             # 画像の横幅が1500pxを超えている場合に縮小
-            if img.shape[1] > max_width:
-                # 新しい高さを計算して、アスペクト比を維持したままリサイズ
-                new_height = int((max_width / img.shape[1]) * img.shape[0])
-                img = cv2.resize(img, (max_width, new_height), interpolation=cv2.INTER_AREA)
+            # 画像の横幅が1500pxを超えている場合に縮小
+            if img.width > max_width:
+                # アスペクト比を維持したままリサイズ
+                new_height = int((max_width / img.width) * img.height)                
+                img = img.resize((max_width, new_height), Image.LANCZOS)
 
-             # リサイズされた画像をバイトIOオブジェクトに保存
-            _, img_encoded = cv2.imencode('.jpg', img)
-            img_byte_arr = io.BytesIO(img_encoded)
+            # リサイズされた画像をバイトIOオブジェクトに保存
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='JPEG')
+            img_byte_arr.seek(0)
 
-            # リサイズされた画像をS3にアップロード
+             # リサイズされた画像をS3にアップロード
             s3.upload_fileobj(
                 img_byte_arr,
                 app.config['S3_BUCKET'],
