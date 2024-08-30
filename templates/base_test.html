@@ -1,64 +1,15 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-   
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OKAME.</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
-
-    {% from "_formhelpers.html" import render_field %}
-    {% for message in get_flashed_messages() %}
-    {{ message }}
-    {% endfor %}
-
-    <style>
-        .container02 {
-            background-color: #f99;
-            
-        }
-
-        .box0 {
-            background-color: #f99;            
-            
-        }
-
-        .box1 {
-            background-color: pink;
-            
-        }
-
-        .box2 {
-            background-color: lightblue; 
-                   
-        }
-
-        .box3 {
-            background-color: lightgreen; 
-                      
-        }
-
-        .box4 {
-            background-color: lightgrey; 
-                      
-        }
-
-        .box5 {
-            background-color: lightblue;
-            margin: 0;
-            padding: 0;
-                        
-        }
-        .box6 {
-            background-color: yellow;
-                               
-        }
-        
-    </style>
     
 
-
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+    
+    <title>OKAME.</title>
+    
 </head>
 <body>
 
@@ -102,17 +53,13 @@
           </div>
         </div>
       </nav>
-      
-      <!-- <div class="container" style="padding-top: 4rem; padding-bottom: 4rem;">
+      <div class="container" style="padding-top: 4rem; padding-bottom: 4rem;">
         <div class="alert alert-warning alert-dismissible fade show" role="alert">
             flashメッセージ
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>    
-        </div>
-      </div> -->     
-
-
-    {% block content %}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        各ページのコンテンツ
+      </div>
     
-    {% endblock %}
 </body>
 </html>
