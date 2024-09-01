@@ -14,6 +14,10 @@
     {% endfor %}
 
     <style>
+        body {
+              padding-top: 56px;            
+        }
+
         .container02 {
             background-color: #f99;
             
@@ -62,7 +66,7 @@
 </head>
 <body>
 
-    <nav class="navbar navbar-expand-lg bg-body-tertiary" data-bs-theme="dark">
+    <nav class="navbar navbar-expand-lg bg-body-tertiary fixed-top" data-bs-theme="dark">
         <div class="container">
           <a class="navbar-brand" href="#">OKAME.</a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -80,7 +84,7 @@
                 <a class="nav-link" href="#">Pricing</a>
               </li>       
               <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('create') }}">新規作成画面</a>
+                <a class="nav-link" href="{{ url_for('create') }}">新規POST</a>
               </li>         
             </ul>
 
