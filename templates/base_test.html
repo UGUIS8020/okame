@@ -11,8 +11,8 @@
     <title>OKAME.</title>
     
 </head>
-<body>
 
+<header>
     <nav class="navbar navbar-expand-lg bg-body-tertiary fixed-top" data-bs-theme="dark">
         <div class="container">
           <a class="navbar-brand" href="#">OKAME.</a>
@@ -60,6 +60,12 @@
           </div>
         各ページのコンテンツ
       </div>
-    
+</header>    
+
+<body>
+
+{% block content %}
+{% endblock %}
+
 </body>
 </html>
