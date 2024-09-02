@@ -122,16 +122,13 @@ class LoginForm(FlaskForm):
 
 @app.route("/")
 @login_required
-def index():
-    # if request.method == "GET":
-        # posts = Post.query.all()
+def index():    
     posts = Post.query.order_by(Post.created_at.desc()).all()
     return render_template("index.html", posts=posts)
-    # return render_template("index.html")
+    
 
 @app.route('/signup', methods=['GET','POST'])
-def signup():
-    print(current_user)
+def signup():    
     form = RegistrationForm()    
 
     if form.validate_on_submit():
@@ -151,6 +148,23 @@ def signup():
         flash('ユーザーが登録されました')
         return redirect(url_for('login'))
     return render_template('signup.html', form=form)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    form = LoginForm()
+    if request.method == "POST" and form.validate_on_submit():
+        email = form.email.data
+        password = form.password.data  
+
+        user = User.query.filter_by(email=email).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            return redirect("/")
+        else:
+                flash("Invalid email or password")  # フィードバックを提供
+                return redirect("/login")
+        
+    return render_template("login.html", form=form)
 
         
 @app.route("/logout")
@@ -209,24 +223,6 @@ def create():
     
     categories = Category.query.all()
     return render_template("create.html", categories=categories)
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    form = LoginForm()
-    if request.method == "POST" and form.validate_on_submit():
-        email = form.email.data
-        password = form.password.data  
-
-        user = User.query.filter_by(email=email).first()
-        if user and check_password_hash(user.password, password):
-            login_user(user)
-            return redirect("/")
-        else:
-                flash("Invalid email or password")  # フィードバックを提供
-                return redirect("/login")
-        
-    return render_template("login.html", form=form)
     
 @app.route("/<int:id>/update", methods=["GET", "POST"])
 @login_required
