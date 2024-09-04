@@ -161,8 +161,8 @@ def login():
             login_user(user)
             return redirect("/")
         else:
-                flash("Invalid email or password")  # フィードバックを提供
-                return redirect("/login")
+            flash("Invalid email or password")  # フィードバックを提供
+            return redirect("/login")
         
     return render_template("login.html", form=form)
 
