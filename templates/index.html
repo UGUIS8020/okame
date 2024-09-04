@@ -29,16 +29,13 @@
                         <p>{{ post.body }}</p>
                       </div>
                       <div class="box6 mb-5"> 
-                        {% if post.image_url %}
-                        <!-- <img src="{{ post.image_url }}" alt="Post Image"> -->
-                        <!-- <img src="{{ post.image_url }}" alt="Post Image" style="max-width: 100%; height: auto;"> -->
-                        <img class="img-fluid" src="{{ post.image_url }}" alt="Post Image">
+                        {% if post.image_url %}                        
+                        <img class="d-block mx-auto" src="{{ post.image_url }}" alt="Post Image">
                         {% endif %}
                       </div>
                       {% endfor %}
                   </article>
-                </div>
-                
+                </div>                
             </div>
     </div>
   
