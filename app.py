@@ -15,6 +15,7 @@ from flask_migrate import Migrate
 from datetime import datetime, date
 import io
 from PIL import Image
+from dateutil.relativedelta import relativedelta
 
 from dotenv import load_dotenv
 
@@ -49,10 +50,10 @@ class RegistrationForm(FlaskForm):
     furigana = StringField('フリガナ', validators=[DataRequired()])
     email = StringField('メールアドレス', validators=[DataRequired(), Email(message='正しいメールアドレスを入力してください')])
     email_confirm = StringField('メールアドレス確認', validators=[DataRequired(), Email(), EqualTo('email', message='メールアドレスが一致していません')])
-    password = PasswordField('パスワード', validators=[DataRequired(), Length(min=8), EqualTo('pass_confirm', message='パスワードが一致していません')])
+    password = PasswordField('パスワード', validators=[DataRequired(), Length(min=8, message='Password must be at least 8 characters long'), EqualTo('pass_confirm', message='パスワードが一致していません')])
     pass_confirm = PasswordField('パスワード(確認)', validators=[DataRequired()])
     gender = SelectField('性別', choices=[('male', '男性'), ('female', '女性'), ('other', 'その他'), ('prefer_not_to_say', '答えたくない')], validators=[DataRequired()])
-    date_of_birth = DateField('生年月日', format='%Y-%m-%d', validators=[DataRequired()])
+    date_of_birth = DateField('生年月日', format='%Y%m%d', validators=[DataRequired()])
     submit = SubmitField('登録')
 
     def validate_display_name(self, field):
@@ -73,8 +74,7 @@ class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(50), nullable=False)
     body = db.Column(db.String(300), nullable=False)    
-    image_url = db.Column(db.String(255), nullable=True)
-    # created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(pytz.timezone('Asia/Tokyo')))
+    image_url = db.Column(db.String(255), nullable=True) 
     created_at = db.Column(db.DateTime, nullable=False, default=tokyo_time)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
 
@@ -91,14 +91,14 @@ class User(UserMixin, db.Model):
     password = db.Column(db.String(128), nullable=False)  # パスワード
     gender = db.Column(db.String(20), nullable=True)  # 性別
     date_of_birth = db.Column(db.Date, nullable=False)  # 生年月日
-    administrator = db.Column(db.String(1), nullable=False, default="0")
+    administrator = db.Column(db.Boolean, nullable=False, default=False)
     
     def __init__(self, display_name, user_name, furigana, email, password, gender, date_of_birth, administrator="0"):
         self.display_name = display_name
         self.user_name = user_name
         self.furigana = furigana
         self.email = email
-        self.password = password  # パスワードはハッシュ化することが推奨されます
+        self.password = password  
         self.gender = gender
         self.date_of_birth = date_of_birth
         self.administrator = administrator
@@ -107,10 +107,14 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f'<User {self.display_name}>'
 
+    # def age(self):
+    #     today = date.today()
+    #     return today.year - self.date_of_birth.year - ((today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day))
+
     def age(self):
         today = date.today()
-        return today.year - self.date_of_birth.year - ((today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day))
-
+        return relativedelta(today, self.date_of_birth).years
+    
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -152,18 +156,17 @@ def signup():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     form = LoginForm()
-    if request.method == "POST" and form.validate_on_submit():
+    if form.validate_on_submit():
         email = form.email.data
-        password = form.password.data  
+        password = form.password.data
 
         user = User.query.filter_by(email=email).first()
         if user and check_password_hash(user.password, password):
             login_user(user)
-            return redirect("/")
+            next_page = request.args.get('next')
+            return redirect(next_page) if next_page else redirect("/")
         else:
-            flash("Invalid email or password")  # フィードバックを提供
-            return redirect("/login")
-        
+            flash("Invalid email or password")
     return render_template("login.html", form=form)
 
         
@@ -192,9 +195,9 @@ def create():
 
             # 画像を読み込む
             img = Image.open(image)
-            max_width = 1300  # 最大横幅を1300pxに設定
+            max_width = 1500  # 最大横幅を1500pxに設定
 
-            # 画像の横幅が1300pxを超えている場合に縮小
+            # 画像の横幅が1500pxを超えている場合に縮小
             if img.width > max_width:
                 # アスペクト比を維持したままリサイズ
                 new_height = int((max_width / img.width) * img.height)                
@@ -238,6 +241,25 @@ def update(id):
         db.session.commit()
         return redirect("/")
     
+
+@bp.route('/category_maintenance', methods=['GET', 'POST'])
+@login_required
+def category_maintenance():
+    page = request.args.get('page', 1, type=int)
+    blog_categories = BlogCategory.query.order_by(BlogCategory.id.asc()).paginate(page=page, per_page=10)
+    form = BlogCategoryForm()
+    if form.validate_on_submit():
+        blog_category = BlogCategory(category=form.category.data)
+        db.session.add(blog_category)
+        db.session.commit()
+        flash('ブログカテゴリが追加されました')
+        return redirect(url_for('main.category_maintenance'))
+    elif form.errors:
+        form.category.data = ""
+        flash(form.errors['category'][0])
+    return render_template('main/category_maintenance.html', blog_categories=blog_categories, form=form)
+                            
+
 @app.route("/<int:id>/delete")
 @login_required
 def delete(id):
