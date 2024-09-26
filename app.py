@@ -63,6 +63,14 @@ class RegistrationForm(FlaskForm):
     def validate_email(self, field):
         if User.query.filter_by(email=field.data).first():
             raise ValidationError('入力されたメールアドレスは既に登録されています。')
+        
+class BlogCategoryForm(FlaskForm):
+    category = StringField('カテゴリ名', validators=[DataRequired()])
+    submit = SubmitField('保存')
+
+    def validate_category(self, field):
+        if BlogCategory.query.filter_by(category=field.data).first():
+            raise ValidationError('入力されたカテゴリ名は既に使われています。')
 
 
 class Category(db.Model):
@@ -114,6 +122,43 @@ class User(UserMixin, db.Model):
     def age(self):
         today = date.today()
         return relativedelta(today, self.date_of_birth).years
+    
+class BlogCategory(db.Model):
+    __tablename__ = 'blog_category'
+    id = db.Column(db.Integer, primary_key=True)
+    category = db.Column(db.String(140))
+    posts = db.relationship('BlogPost', backref='blogcategory', lazy='dynamic')
+
+    def __init__(self, category):
+        self.category = category
+    
+    def __repr__(self):
+        return f"CategoryID: {self.id}, CategoryName: {self.category} \n"
+
+    def count_posts(self, id):
+        return BlogPost.query.filter_by(category_id=id).count()
+    
+class BlogPost(db.Model):
+    __tablename__ = 'blog_post'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    category_id = db.Column(db.Integer, db.ForeignKey('blog_category.id'))
+    date = db.Column(db.DateTime, default=datetime.now(pytz.timezone('Asia/Tokyo')))
+    title = db.Column(db.String(140))
+    text = db.Column(db.Text)
+    summary = db.Column(db.String(140))
+    featured_image = db.Column(db.String(140))
+
+    def __init__(self, title, text, featured_image, user_id, category_id, summary):
+        self.title = title
+        self.text = text
+        self.featured_image = featured_image
+        self.user_id = user_id
+        self.category_id = category_id
+        self.summary = summary
+
+    def __repr__(self):
+        return f"PostID: {self.id}, Title: {self.title}, Author: {self.author} \n"
     
 @login_manager.user_loader
 def load_user(user_id):
@@ -242,7 +287,7 @@ def update(id):
         return redirect("/")
     
 
-@bp.route('/category_maintenance', methods=['GET', 'POST'])
+@app.route('/category_maintenance', methods=['GET', 'POST'])
 @login_required
 def category_maintenance():
     page = request.args.get('page', 1, type=int)
@@ -253,11 +298,11 @@ def category_maintenance():
         db.session.add(blog_category)
         db.session.commit()
         flash('ブログカテゴリが追加されました')
-        return redirect(url_for('main.category_maintenance'))
+        return redirect(url_for('category_maintenance'))
     elif form.errors:
         form.category.data = ""
         flash(form.errors['category'][0])
-    return render_template('main/category_maintenance.html', blog_categories=blog_categories, form=form)
+    return render_template('category_maintenance.html', blog_categories=blog_categories, form=form)
                             
 
 @app.route("/<int:id>/delete")
