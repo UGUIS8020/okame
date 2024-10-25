@@ -30,6 +30,16 @@ s3 = boto3.client('s3',
     region_name=os.getenv("AWS_REGION")
 )
 
+dynamodb = boto3.client('dynamodb',
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    region_name=os.getenv("AWS_REGION")    
+    )
+
+table_name=os.getenv("TABLE_NAME")
+
+
+
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///blog.db"
 app.config["SECRET_KEY"] = os.urandom(24)
 app.config['S3_BUCKET'] = os.getenv("S3_BUCKET")
@@ -182,6 +192,23 @@ def signup():
 
     if form.validate_on_submit():
         hashed_password = generate_password_hash(form.password.data, method='pbkdf2:sha256')
+        
+        response = dynamodb.put_item(
+        TableName=table_name,
+        Item={
+            "user_id": {"S": str(uuid.uuid4())},  # ユニークID
+            "email": {"S": "test100@test.com"},
+            "administrator": {"BOOL": False},
+            "date_of_birth": {"S": "2001-12-15"},             
+            "gender": {"S": "male"},
+            "name": {"S": "渋谷正彦"},
+            "password": {"S": hashed_password},  # ハッシュ化したパスワード
+            "created_at": {"S": datetime.now().isoformat()},
+            "updated_at": {"S": datetime.now().isoformat()}
+        }
+    )
+
+
         user = User(
             email=form.email.data,
             user_name=form.user_name.data,
