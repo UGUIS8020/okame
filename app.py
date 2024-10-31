@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_wtf import FlaskForm
-from flask import render_template, request, redirect, url_for, flash, request, abort
+from flask import render_template, request, redirect, url_for, flash, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin, LoginManager, login_user,logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -55,15 +55,18 @@ def tokyo_time():
     return datetime.now(pytz.timezone('Asia/Tokyo'))
 
 class RegistrationForm(FlaskForm):
-    display_name = StringField('表示ネーム', validators=[DataRequired(), Length(min=3, max=30)])
+    display_name = StringField('表示ネーム LINE名など', validators=[DataRequired(), Length(min=3, max=30)])
     user_name = StringField('ユーザー名', validators=[DataRequired()])
     furigana = StringField('フリガナ', validators=[DataRequired()])
+    phone = StringField('電話番号', validators=[DataRequired(), Length(min=10, max=15, message='正しい電話番号を入力してください')])
+    post_code = StringField('郵便番号', validators=[DataRequired(), Length(min=7, max=7, message='ハイフン無しで７桁で入力してください')])
+    address = StringField('住所', validators=[DataRequired(), Length(max=100, message='住所は100文字以内で入力してください')])
     email = StringField('メールアドレス', validators=[DataRequired(), Email(message='正しいメールアドレスを入力してください')])
     email_confirm = StringField('メールアドレス確認', validators=[DataRequired(), Email(), EqualTo('email', message='メールアドレスが一致していません')])
-    password = PasswordField('パスワード', validators=[DataRequired(), Length(min=8, message='Password must be at least 8 characters long'), EqualTo('pass_confirm', message='パスワードが一致していません')])
-    pass_confirm = PasswordField('パスワード(確認)', validators=[DataRequired()])
-    gender = SelectField('性別', choices=[('male', '男性'), ('female', '女性'), ('other', 'その他'), ('prefer_not_to_say', '答えたくない')], validators=[DataRequired()])
-    date_of_birth = DateField('生年月日', format='%Y%m%d', validators=[DataRequired()])
+    password = PasswordField('パスワード', validators=[DataRequired(), Length(min=8, message='パスワードは8文字以上で入力してください'), EqualTo('pass_confirm', message='パスワードが一致していません')])
+    pass_confirm = PasswordField('パスワード(確認)', validators=[DataRequired()])    
+    gender = SelectField('性別', choices=[('', '性別'), ('male', '男性'), ('female', '女性'), ('other', 'その他')], validators=[DataRequired()])
+    date_of_birth = DateField('生年月日', format='%Y-%m-%d', validators=[DataRequired()])
     submit = SubmitField('登録')
 
     def validate_display_name(self, field):
@@ -98,10 +101,45 @@ class Post(db.Model):
 
 
 
+# class User(UserMixin, db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+    
+#     # サインアップフィールド
+#     display_name = db.Column(db.String(30), unique=True, nullable=False)  # 表示ネーム
+#     user_name = db.Column(db.String(100), nullable=False)  # 名前
+#     furigana = db.Column(db.String(100), nullable=False)  # フリガナ
+#     email = db.Column(db.String(120), unique=True, nullable=False)  # メールアドレス
+#     password = db.Column(db.String(128), nullable=False)  # パスワード
+#     gender = db.Column(db.String(20), nullable=True)  # 性別
+#     date_of_birth = db.Column(db.Date, nullable=False)  # 生年月日
+#     post_code = db.Column(db.String(7), nullable=False)  # 郵便番号
+#     address = db.Column(db.String(100), nullable=False)  # 住所
+#     phone = db.Column(db.String(15), nullable=False)  # 電話番号
+#     administrator = db.Column(db.Boolean, nullable=False, default=False)
+    
+#     def __init__(self, display_name, user_name, furigana, email, password, gender, date_of_birth, post_code, address, phone, administrator=False):
+#         self.display_name = display_name
+#         self.user_name = user_name
+#         self.furigana = furigana
+#         self.email = email
+#         self.password = password  
+#         self.gender = gender
+#         self.date_of_birth = date_of_birth
+#         self.post_code = post_code
+#         self.address = address
+#         self.phone = phone
+#         self.administrator = administrator
+                            
+
+#     def __repr__(self):
+#         return f'<User {self.display_name}>'    
+
+#     def age(self):
+#         today = date.today()
+#         return relativedelta(today, self.date_of_birth).years
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    
-    # サインアップフィールド
     display_name = db.Column(db.String(30), unique=True, nullable=False)  # 表示ネーム
     user_name = db.Column(db.String(100), nullable=False)  # 名前
     furigana = db.Column(db.String(100), nullable=False)  # フリガナ
@@ -109,9 +147,12 @@ class User(UserMixin, db.Model):
     password = db.Column(db.String(128), nullable=False)  # パスワード
     gender = db.Column(db.String(20), nullable=True)  # 性別
     date_of_birth = db.Column(db.Date, nullable=False)  # 生年月日
-    administrator = db.Column(db.Boolean, nullable=False, default=False)
-    
-    def __init__(self, display_name, user_name, furigana, email, password, gender, date_of_birth, administrator="0"):
+    post_code = db.Column(db.String(7), nullable=False)  # 郵便番号
+    address = db.Column(db.String(100), nullable=False)  # 住所
+    phone = db.Column(db.String(15), nullable=False)  # 電話番号
+    administrator = db.Column(db.Boolean, nullable=False, default=False)  # 管理者権限
+
+    def __init__(self, display_name, user_name, furigana, email, password, gender, date_of_birth, post_code, address, phone, administrator=False):
         self.display_name = display_name
         self.user_name = user_name
         self.furigana = furigana
@@ -119,19 +160,62 @@ class User(UserMixin, db.Model):
         self.password = password  
         self.gender = gender
         self.date_of_birth = date_of_birth
+        self.post_code = post_code
+        self.address = address
+        self.phone = phone
         self.administrator = administrator
-                            
 
     def __repr__(self):
         return f'<User {self.display_name}>'
-
-    # def age(self):
-    #     today = date.today()
-    #     return today.year - self.date_of_birth.year - ((today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day))
-
+    
+    @property
     def age(self):
+        """現在の日付とdate_of_birthの差から年齢を計算します"""
         today = date.today()
         return relativedelta(today, self.date_of_birth).years
+    
+    def is_administrator(self):
+        """ユーザーが管理者かどうかを返します"""
+        return self.administrator
+
+
+# DynamoDBからデータを取得してUserインスタンスを作成する関数
+def get_user_from_dynamodb(user_id):
+    try:
+        # DynamoDBからユーザーデータを取得
+        response = dynamodb.get_item(
+            TableName=table_name,
+            Key={"user_id": {"S": user_id}}
+        )
+        
+        # データが存在しない場合の処理
+        if 'Item' not in response:
+            print("User not found in DynamoDB.")
+            return None
+
+        item = response['Item']
+
+        # DynamoDBのデータをUserクラスのインスタンスに変換
+        user = User(
+            display_name=item['display_name']['S'],
+            user_name=item['user_name']['S'],
+            furigana=item['furigana']['S'],
+            email=item['email']['S'],
+            password=item['password']['S'],
+            gender=item['gender']['S'],
+            date_of_birth=datetime.strptime(item['date_of_birth']['S'], '%Y-%m-%d').date(),
+            post_code=item['post_code']['S'],
+            address=item['address']['S'],
+            phone=item['phone']['S'],
+            administrator=item['administrator']['BOOL']
+        )
+        
+        return user
+
+    except Exception as e:
+        print(f"Error fetching user from DynamoDB: {str(e)}")
+        return None
+    
     
 class BlogCategory(db.Model):
     __tablename__ = 'blog_category'
@@ -151,7 +235,7 @@ class BlogCategory(db.Model):
 class BlogPost(db.Model):
     __tablename__ = 'blog_post'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     category_id = db.Column(db.Integer, db.ForeignKey('blog_category.id'))
     date = db.Column(db.DateTime, default=datetime.now(pytz.timezone('Asia/Tokyo')))
     title = db.Column(db.String(140))
@@ -186,43 +270,37 @@ def index():
     return render_template("index.html", posts=posts)
     
 
-@app.route('/signup', methods=['GET','POST'])
-def signup():    
-    form = RegistrationForm()    
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    form = RegistrationForm()
 
     if form.validate_on_submit():
+        # パスワードをハッシュ化
         hashed_password = generate_password_hash(form.password.data, method='pbkdf2:sha256')
-        
+
+        # DynamoDBにデータを保存
         response = dynamodb.put_item(
-        TableName=table_name,
-        Item={
-            "user_id": {"S": str(uuid.uuid4())},  # ユニークID
-            "email": {"S": "test100@test.com"},
-            "administrator": {"BOOL": False},
-            "date_of_birth": {"S": "2001-12-15"},             
-            "gender": {"S": "male"},
-            "name": {"S": "渋谷正彦"},
-            "password": {"S": hashed_password},  # ハッシュ化したパスワード
-            "created_at": {"S": datetime.now().isoformat()},
-            "updated_at": {"S": datetime.now().isoformat()}
-        }
-    )
+            TableName=table_name,
+            Item={
+                "user_id": {"S": str(uuid.uuid4())},  # ユニークID
+                "email": {"S": form.email.data},
+                "administrator": {"BOOL": False},  # デフォルトでFalseに設定
+                "date_of_birth": {"S": form.date_of_birth.data.strftime('%Y-%m-%d')},
+                "gender": {"S": form.gender.data},
+                "display_name": {"S": form.display_name.data},
+                "furigana": {"S": form.furigana.data},
+                "phone": {"S": form.phone.data},
+                "post_code": {"S": form.post_code.data},
+                "address": {"S": form.address.data},
+                "password": {"S": hashed_password},
+                "created_at": {"S": datetime.now().isoformat()},
+                "updated_at": {"S": datetime.now().isoformat()}
+            }
+        )       
 
-
-        user = User(
-            email=form.email.data,
-            user_name=form.user_name.data,
-            display_name=form.display_name.data,
-            furigana=form.furigana.data,
-            password=hashed_password,  # ハッシュ化されたパスワードを使用
-            gender=form.gender.data,
-            date_of_birth=form.date_of_birth.data,
-            administrator="0"  # もしadministratorフィールドが必要であれば
-        )
-        db.session.add(user)
-        db.session.commit()
         flash('ユーザーが登録されました')
         return redirect(url_for('login'))
+    
     return render_template('signup.html', form=form)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -247,6 +325,16 @@ def login():
 def logout():
     logout_user()
     return redirect("/login")
+
+
+@app.route("/user_maintenance", methods=["GET", "POST"])
+@login_required
+def user_maintenance():
+    # 1ページあたりのユーザー数を設定（例：10）
+    page = request.args.get('page', 1, type=int)
+    users = User.query.paginate(page=page, per_page=10)
+
+    return render_template("user_maintenance.html", users=users)
 
 
 @app.route("/create", methods=["GET", "POST"])
