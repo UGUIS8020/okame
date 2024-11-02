@@ -14,6 +14,7 @@ with app.app_context():
 
     # テストユーザーの作成
     test_user = User(
+        user_id=item
         display_name="UGUIS",
         user_name="渋谷　正彦",
         furigana="シブヤ　マサヒコ",
