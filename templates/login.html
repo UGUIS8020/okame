@@ -5,46 +5,47 @@
         <div class="row">
             <div class="col-lg-6 mx-auto">
                 <div class="card bg-primary text-center">
-                        {% macro render_field_with_errors(field) %}
-                        <div class="form-group">
-                            {{ field(class="form-control form-control-lg " + (" is-invalid" if field.errors else ""), **kwargs) }}
-                            {% if field.errors %}
-                                {% for error in field.errors %}
-                                    <div class="invalid-feedback">
-                                        {{ error }}
-                                    </div>
-                                {% endfor %}
-                            {% endif %}
-                        </div>
-                        {% endmacro %}
 
-                        <div class="card-body text-light">
-                            <h3>ログイン</h3>
-                            <p>ユーザー情報を入力してください。</p>
-                            <form method="POST">
-                                {{ form.hidden_tag() }}            
-                                
-                                <div class="mb-3">
-                                    {{ render_field(form.email, placeholder="メールアドレス", class="form-control form-control-lg") }}
+                    {% macro render_field_with_errors(field, placeholder, css_class="form-control form-control-lg") %}
+                    <div class="form-group">
+                        {{ field(class=css_class + (" is-invalid" if field.errors else ""), placeholder=placeholder) }}
+                        {% if field.errors %}
+                            {% for error in field.errors %}
+                                <div class="invalid-feedback">
+                                    {{ error }}
                                 </div>
-                                
-                                <div class="mb-3">
-                                    {{ render_field(form.password, placeholder="パスワード", class="form-control form-control-lg") }}
-                                </div>                        
-                                
-                                <div class="mb-3 form-check text-light">
-                                    {{ form.remember(class="form-check-input") }}
-                                    {{ form.remember.label(class="form-check-label") }}
-                                </div>
-                                
-                                {{ form.submit(class="btn btn-outline-light w-100") }}
-                                
-                                <!-- サインアップページへのリンク -->
-                                <div class="d-grid mt-3">
-                                    <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">はじめての方はサインアップページ</a>
-                                </div>
-                            </form>
-                        </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                    {% endmacro %}
+
+                    <div class="card-body text-light">
+                        <h3>ログイン</h3>
+                        <p>ユーザー情報を入力してください。</p>
+                        <form method="POST">
+                            {{ form.hidden_tag() }}            
+
+                            <div class="mb-3">
+                                {{ render_field_with_errors(form.email, placeholder="メールアドレス") }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                {{ render_field_with_errors(form.password, placeholder="パスワード") }}
+                            </div>                        
+                            
+                            <div class="mb-3 form-check text-light">
+                                {{ form.remember(class="form-check-input") }}
+                                {{ form.remember.label(class="form-check-label") }}
+                            </div>
+                            
+                            {{ form.submit(class="btn btn-outline-light w-100") }}
+                            
+                            <!-- サインアップページへのリンク -->
+                            <div class="d-grid mt-3">
+                                <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">はじめての方はサインアップページ</a>
+                            </div>
+                        </form>
+                    </div>
 
                         <!-- カスタムスタイル -->
                         <style>

@@ -17,6 +17,9 @@ from dateutil.relativedelta import relativedelta
 from botocore.exceptions import ClientError
 from init_db import init_tables  # init_counter_tableから変更
 import logging
+import time
+import random
+from urllib.parse import urlparse, urljoin
 from dotenv import load_dotenv
 
 # ロギングの設定
@@ -79,12 +82,11 @@ def create_app():
         logger.error(f"Failed to initialize application: {str(e)}")
         raise
 
-create_app()  # アプリケーションの初期化
+app = create_app()  # アプリケーションの初期化
 
 def tokyo_time():
     return datetime.now(pytz.timezone('Asia/Tokyo'))
 
-# ユーザーローダーの設定
 @login_manager.user_loader
 def load_user(user_id):
     try:
@@ -93,7 +95,20 @@ def load_user(user_id):
             Key={'user_id': {'S': user_id}}
         )
         if 'Item' in response:
-            return User.from_dynamodb_item(response['Item'])
+            user_data = response['Item']
+            return User(
+                user_id=user_data['user_id']['S'],
+                display_name=user_data['display_name']['S'],
+                user_name=user_data['user_name']['S'],
+                furigana=user_data['furigana']['S'],
+                email=user_data['email']['S'],
+                password_hash=user_data['password']['S'],
+                gender=user_data['gender']['S'],
+                date_of_birth=user_data['date_of_birth']['S'],
+                post_code=user_data['post_code']['S'],
+                address=user_data['address']['S'],
+                phone=user_data['phone']['S']
+            )
         return None
     except Exception as e:
         app.logger.error(f"Error loading user: {str(e)}")
@@ -116,12 +131,38 @@ class RegistrationForm(FlaskForm):
     submit = SubmitField('登録')
 
     def validate_display_name(self, field):
-        if User.query.filter_by(display_name=field.data).first():
-            raise ValidationError('入力された表示ネームは既に使われています。')
+        try:
+            # display_nameのインデックスを使用して検索
+            response = app.dynamodb.query(
+                TableName=app.table_name,
+                IndexName='display_name-index',  # インデックスが必要
+                KeyConditionExpression='display_name = :display_name',
+                ExpressionAttributeValues={
+                    ':display_name': {'S': field.data}
+                }
+            )
+            if response.get('Items'):
+                raise ValidationError('入力された表示ネームは既に使われています。')
+        except Exception as e:
+            app.logger.error(f"Error validating display_name: {str(e)}")
+            raise ValidationError('表示ネームの確認中にエラーが発生しました。')
 
     def validate_email(self, field):
-        if User.query.filter_by(email=field.data).first():
-            raise ValidationError('入力されたメールアドレスは既に登録されています。')
+        try:
+            # emailのインデックスを使用して検索
+            response = app.dynamodb.query(
+                TableName=app.table_name,
+                IndexName='email-index',
+                KeyConditionExpression='email = :email',
+                ExpressionAttributeValues={
+                    ':email': {'S': field.data}
+                }
+            )
+            if response.get('Items'):
+                raise ValidationError('入力されたメールアドレスは既に登録されています。')
+        except Exception as e:
+            app.logger.error(f"Error validating email: {str(e)}")
+            raise ValidationError('メールアドレスの確認中にエラーが発生しました。')
         
         
 class UpdateUserForm(FlaskForm):
@@ -167,124 +208,91 @@ class UpdateUserForm(FlaskForm):
 
 
 class User(UserMixin):
-    def __init__(self, user_id, display_name, user_name, furigana, email, password, 
+    def __init__(self, user_id, display_name, user_name, furigana, email, password_hash, 
                  gender, date_of_birth, post_code, address, phone, 
                  organization='uguis', administrator=False, 
                  created_at=None, updated_at=None):
-        self.id = user_id  # Flask-Loginはidプロパティを使用
-        self.organization = organization  # 所属を追加（デフォルト：uguis）
+        self.user_id = user_id
         self.display_name = display_name
         self.user_name = user_name
         self.furigana = furigana
         self.email = email
-        self.password = password
+        self.password_hash = password_hash  # ハッシュ化されたパスワードを保持
         self.gender = gender
-        self.date_of_birth = self._parse_date(date_of_birth)
+        self.date_of_birth = date_of_birth
         self.post_code = post_code
         self.address = address
         self.phone = phone
+        self.organization = organization
         self.administrator = administrator
         self.created_at = created_at or datetime.now().isoformat()
-        self.updated_at = updated_at or datetime.now().isoformat()
+        self.updated_at = updated_at or datetime.now().isoformat()    
 
-    def _parse_date(self, date_value):
-        """日付文字列またはdateオブジェクトを適切に処理"""
-        if isinstance(date_value, str):
-            try:
-                return datetime.strptime(date_value, '%Y-%m-%d').date()
-            except ValueError:
-                return None
-        elif isinstance(date_value, date):
-            return date_value
-        return None
-
-    @property
-    def age(self):
-        """現在の年齢を計算"""
-        if not self.date_of_birth:
-            return None
-        today = date.today()
-        return relativedelta(today, self.date_of_birth).years
-
-    def is_administrator(self):
-        """管理者権限の確認"""
-        return self.administrator
+    def get_id(self):
+        return str(self.user_id)  # Flask-Loginは文字列のIDを期待します
 
     @staticmethod
     def from_dynamodb_item(item):
-        """DynamoDBのitemからUserオブジェクトを生成"""
-        try:
-            return User(
-                user_id=item.get('user_id', {}).get('S'),
-                organization=item.get('organization', {}).get('S', 'uguis'),  # デフォルト値を設定
-                display_name=item.get('display_name', {}).get('S'),
-                user_name=item.get('user_name', {}).get('S'),
-                furigana=item.get('furigana', {}).get('S'),
-                email=item.get('email', {}).get('S'),
-                password=item.get('password', {}).get('S'),
-                gender=item.get('gender', {}).get('S'),
-                date_of_birth=item.get('date_of_birth', {}).get('S'),
-                post_code=item.get('post_code', {}).get('S'),
-                address=item.get('address', {}).get('S'),
-                phone=item.get('phone', {}).get('S'),
-                administrator=item.get('administrator', {}).get('BOOL', False),
-                created_at=item.get('created_at', {}).get('S'),
-                updated_at=item.get('updated_at', {}).get('S')
-            )
-        except Exception as e:
-            print(f"Error creating User from DynamoDB item: {str(e)}")
-            return None
+        """DynamoDBのアイテムからUserオブジェクトを生成"""
+        return User(
+            user_id=item.get('user_id', {}).get('S'),
+            display_name=item.get('display_name', {}).get('S'),
+            user_name=item.get('user_name', {}).get('S'),
+            furigana=item.get('furigana', {}).get('S'),
+            email=item.get('email', {}).get('S'),
+            password_hash=item.get('password', {}).get('S'),  # パスワードハッシュを直接受け取る
+            gender=item.get('gender', {}).get('S'),
+            date_of_birth=item.get('date_of_birth', {}).get('S'),
+            post_code=item.get('post_code', {}).get('S'),
+            address=item.get('address', {}).get('S'),
+            phone=item.get('phone', {}).get('S'),
+            organization=item.get('organization', {}).get('S', 'uguis'),
+            administrator=bool(item.get('administrator', {}).get('BOOL', False)),  # ブール型に変換
+            created_at=item.get('created_at', {}).get('S'),
+            updated_at=item.get('updated_at', {}).get('S')
+        )
 
     def to_dynamodb_item(self):
-        """UserオブジェクトをDynamoDB形式に変換"""
+        """UserオブジェクトをDynamoDBアイテムに変換"""
         return {
-            'user_id': {'S': str(self.id)},
-            'organization': {'S': self.organization},  # 所属を追加
-            'display_name': {'S': self.display_name},
-            'user_name': {'S': self.user_name},
-            'furigana': {'S': self.furigana},
-            'email': {'S': self.email},
-            'password': {'S': self.password},
-            'gender': {'S': self.gender},
-            'date_of_birth': {'S': self.date_of_birth.strftime('%Y-%m-%d') if self.date_of_birth else ''},
-            'post_code': {'S': self.post_code},
-            'address': {'S': self.address},
-            'phone': {'S': self.phone},
-            'administrator': {'BOOL': self.administrator},
-            'created_at': {'S': self.created_at},
-            'updated_at': {'S': self.updated_at}
+            "user_id": {"S": self.user_id},
+            "organization": {"S": self.organization},
+            "address": {"S": self.address},
+            "administrator": {"BOOL": self.administrator},
+            "created_at": {"S": self.created_at},
+            "date_of_birth": {"S": self.date_of_birth if self.date_of_birth else ''},
+            "display_name": {"S": self.display_name},
+            "email": {"S": self.email},
+            "furigana": {"S": self.furigana},
+            "gender": {"S": self.gender},
+            "password": {"S": self.password_hash},  # ハッシュ化されたパスワードを保存
+            "phone": {"S": self.phone},
+            "post_code": {"S": self.post_code},
+            "updated_at": {"S": self.updated_at},
+            "user_name": {"S": self.user_name}
         }
 
-    def to_dict(self):
-        """UserオブジェクトをJSONシリアライズ可能な辞書に変換"""
-        return {
-            'user_id': str(self.id),
-            'organization': self.organization,
-            'display_name': self.display_name,
-            'user_name': self.user_name,
-            'furigana': self.furigana,
-            'email': self.email,
-            'gender': self.gender,
-            'date_of_birth': self.date_of_birth.strftime('%Y-%m-%d') if self.date_of_birth else None,
-            'post_code': self.post_code,
-            'address': self.address,
-            'phone': self.phone,
-            'administrator': self.administrator,
-            'age': self.age,
-            'created_at': self.created_at,
-            'updated_at': self.updated_at
-        }
+    def set_password(self, password):
+        """パスワードをハッシュ化して設定"""
+        self.password_hash = generate_password_hash(password)
 
-    def __repr__(self):
-        return f'<User {self.display_name} ({self.organization})>'
+    def check_password(self, password):
+        """パスワードの検証"""
+        return check_password_hash(self.password_hash, password)
+    
+    def is_authenticated(self):
+        if self.administrator == True:
+            return True
+        else:
+            return False
 
 
 # DynamoDBからデータを取得してUserインスタンスを作成する関数
 def get_user_from_dynamodb(user_id):
     try:
         # DynamoDBからユーザーデータを取得
-        response = dynamodb.get_item(
-            TableName=table_name,
+        response = app.dynamodb.get_item(
+            TableName=app.table_name,
             Key={"user_id": {"S": user_id}}
         )
         
@@ -297,24 +305,26 @@ def get_user_from_dynamodb(user_id):
 
         # DynamoDBのデータをUserクラスのインスタンスに変換
         user = User(
+            user_id=item['user_id']['S'],
             display_name=item['display_name']['S'],
             user_name=item['user_name']['S'],
             furigana=item['furigana']['S'],
             email=item['email']['S'],
-            password=item['password']['S'],
+            password_hash=item['password']['S'],  # パスワードハッシュを設定
             gender=item['gender']['S'],
             date_of_birth=datetime.strptime(item['date_of_birth']['S'], '%Y-%m-%d').date(),
             post_code=item['post_code']['S'],
             address=item['address']['S'],
             phone=item['phone']['S'],
-            administrator=item['administrator']['BOOL']
+            organization=item.get('organization', {}).get('S', 'uguis'),
+            administrator=bool(item.get('administrator', {}).get('BOOL', False))  # ブール型に変換
         )
         
         return user
 
     except Exception as e:
         print(f"Error fetching user from DynamoDB: {str(e)}")
-        return None    
+        return None       
 
 class LoginForm(FlaskForm):
     email = StringField(
@@ -324,31 +334,24 @@ class LoginForm(FlaskForm):
             Email(message='正しいメールアドレスの形式で入力してください')
         ]
     )
-    
     password = PasswordField(
         'パスワード',
         validators=[
             DataRequired(message='パスワードを入力してください')
         ]
     )
-    
     remember = BooleanField('ログイン状態を保持する')
     submit = SubmitField('ログイン')
 
-    def __init__(self, dynamodb_table=None, *args, **kwargs):
-        """
-        Args:
-            dynamodb_table: DynamoDBのテーブルインスタンス（オプショナル）
-        """
+    def __init__(self, *args, **kwargs):
         super(LoginForm, self).__init__(*args, **kwargs)
-        self.table = dynamodb_table
         self.user = None  # self.userを初期化
 
     def validate_email(self, field):
         """メールアドレスの存在確認"""
         try:
             # メールアドレスでユーザーを検索
-            response = self.table.query(
+            response = app.table.query(
                 IndexName='email-index',
                 KeyConditionExpression='email = :email',
                 ExpressionAttributeValues={
@@ -381,8 +384,26 @@ class LoginForm(FlaskForm):
 @app.route("/")
 @login_required
 def index():    
-    posts = Post.query.order_by(Post.created_at.desc()).all()
-    return render_template("index.html", posts=posts)
+    try:
+        # DynamoDBからポストを取得
+        response = app.table_posts.scan(  # 別のテーブルを想定
+            IndexName='created_at-index',  # 作成日時のインデックスを使用
+        )
+        
+        # 取得したアイテムを日付でソート
+        posts = sorted(
+            response.get('Items', []),
+            key=lambda x: x['created_at'],
+            reverse=True  # 降順
+        )
+        
+        app.logger.info(f"Retrieved {len(posts)} posts for index page")
+        return render_template("index.html", posts=posts)
+        
+    except Exception as e:
+        app.logger.error(f"Error retrieving posts: {str(e)}")
+        flash('投稿の取得中にエラーが発生しました。', 'error')
+        return render_template("index.html", posts=[])
     
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -395,8 +416,8 @@ def signup():
             user_id = str(uuid.uuid4())
 
             # メールアドレスの重複チェック用のクエリ
-            email_check = dynamodb.query(
-                TableName=table_name,
+            email_check = app.dynamodb.query(
+                TableName=app.table_name,
                 IndexName='email-index',
                 KeyConditionExpression='email = :email',
                 ExpressionAttributeValues={
@@ -410,8 +431,8 @@ def signup():
                 return redirect(url_for('signup'))
 
             # ユーザーの保存
-            response = dynamodb.put_item(
-                TableName=table_name,
+            response = app.dynamodb.put_item(
+                TableName=app.table_name,
                 Item={
                     "user_id": {"S": user_id},
                     "organization": {"S": form.organization.data},  # 所属を追加
@@ -451,7 +472,7 @@ def signup():
                 flash('入力データが無効です。', 'error')
             elif error_code == 'ResourceNotFoundException':
                 flash('システムエラーが発生しました。', 'error')
-                app.logger.critical(f"DynamoDB table not found: {table_name}")
+                app.logger.critical(f"DynamoDB table not found: {app.table_name}")
             else:
                 flash('アカウント作成中にエラーが発生しました。', 'error')
                 
@@ -473,14 +494,95 @@ def signup():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    form = LoginForm(dynamodb_table=app.table)  # ここでテーブルを渡す
-    if form.validate_on_submit():
-        user = user.query.filter_by(email=form.email.data).first()
-        if user is not None:
-            if user.
-        # ログイン成功時の処理
+    if current_user.is_authenticated:
         return redirect(url_for('index'))
+
+    form = LoginForm(dynamodb_table=app.table)
+    if form.validate_on_submit():
+        try:
+            # メールアドレスでユーザーを取得
+            response = app.table.query(
+                IndexName='email-index',
+                KeyConditionExpression='email = :email',
+                ExpressionAttributeValues={
+                    ':email': form.email.data.lower()
+                }
+            )
+            
+            items = response.get('Items', [])
+            user_data = items[0] if items else None
+            
+            if not user_data:
+                app.logger.warning(f"No user found for email: {form.email.data}")
+                flash('メールアドレスまたはパスワードが正しくありません。', 'error')
+                return render_template('login.html', form=form)
+
+            # 必要なフィールドの存在確認
+            required_fields = ['user_id', 'display_name', 'user_name', 'furigana', 
+                             'email', 'password', 'gender', 'date_of_birth', 
+                             'post_code', 'address', 'phone']
+            
+            if not all(field in user_data for field in required_fields):
+                app.logger.error(f"Missing required fields in user data for email: {form.email.data}")
+                flash('ユーザーデータの取得に失敗しました。', 'error')
+                return render_template('login.html', form=form)
+
+            try:
+                user = User(
+                    user_id=user_data['user_id'],
+                    display_name=user_data['display_name'],
+                    user_name=user_data['user_name'],
+                    furigana=user_data['furigana'],
+                    email=user_data['email'],
+                    password_hash=user_data['password'],
+                    gender=user_data['gender'],
+                    date_of_birth=user_data['date_of_birth'],
+                    post_code=user_data['post_code'],
+                    address=user_data['address'],
+                    phone=user_data['phone']
+                )
+            except KeyError as e:
+                app.logger.error(f"Error creating user object: {str(e)}")
+                flash('ユーザーデータの読み込みに失敗しました。', 'error')
+                return render_template('login.html', form=form)
+
+            if not hasattr(user, 'check_password'):
+                app.logger.error("User object missing check_password method")
+                flash('ログイン処理中にエラーが発生しました。', 'error')
+                return render_template('login.html', form=form)
+
+            if user.check_password(form.password.data):
+                login_user(user, remember=form.remember.data)
+                app.logger.info(f"User logged in successfully - ID: {user.user_id}")
+                flash('ログインに成功しました。', 'success')
+                
+                next_page = request.args.get('next')
+                if not next_page or not is_safe_url(next_page):
+                    next_page = url_for('index')
+                return redirect(next_page)
+            
+            app.logger.warning(f"Invalid password attempt for email: {form.email.data}")
+            time.sleep(random.uniform(0.1, 0.3))
+            flash('メールアドレスまたはパスワードが正しくありません。', 'error')
+                
+        except Exception as e:
+            app.logger.error(f"Login error: {str(e)}")
+            flash('ログイン処理中にエラーが発生しました。', 'error')
+    
     return render_template('login.html', form=form)
+
+# セキュアなリダイレクト先かを確認する関数
+def is_safe_url(target):
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
+
+# セキュアなリダイレクト先かチェックする関数
+def is_safe_url(target):
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and \
+           ref_url.netloc == test_url.netloc
 
         
 @app.route("/logout")
@@ -494,18 +596,12 @@ def logout():
 @login_required
 def user_maintenance():
     try:
-        # シンプルにすべてのユーザーを取得
-        response = dynamodb.scan(
-            TableName=table_name
-        )
+        # テーブルからすべてのユーザーを取得
+        response = app.table.scan()
         
-        # デバッグ用にデータ構造を確認
-        print("DEBUG: Response:", response)
-        
+        # デバッグ用に取得したユーザーデータを表示
         users = response.get('Items', [])
-        
-        # デバッグ用にユーザーデータを確認
-        print("DEBUG: Users:", users)
+        app.logger.info(f"Retrieved {len(users)} users for maintenance page")
 
         return render_template(
             "user_maintenance.html",
@@ -525,8 +621,8 @@ def user_maintenance():
 def account(user_id):
     # DynamoDBからユーザー情報を取得
     try:
-        response = dynamodb.get_item(
-            TableName=table_name,
+        response = app.dynamodb.get_item(
+            TableName=app.table_name,
             Key={
                 'user_id': {'S': user_id}
             }
@@ -567,8 +663,8 @@ def account(user_id):
             expression_values[':updated_at'] = {'S': current_time}
 
             # DynamoDBを更新
-            response = dynamodb.update_item(
-                TableName=table_name,
+            response = app.dynamodb.update_item(
+                TableName=app.table_name,
                 Key={
                     'user_id': {'S': user_id}
                 },
@@ -625,7 +721,7 @@ def create():
             img_byte_arr.seek(0)
 
              # リサイズされた画像をS3にアップロード
-            s3.upload_fileobj(
+            app.s3.upload_fileobj(
                 img_byte_arr,
                 app.config['S3_BUCKET'],
                 unique_filename
