@@ -22,9 +22,7 @@ def create_app():
     
     # テーブル名の設定
     environment = os.getenv("ENVIRONMENT")
-    app.table_name = f"{environment}-users"
-    
-    # テーブルの初期化
+    app.table_name = f"{environment}-users"    
     app.table = app.dynamodb.Table(app.table_name)
     
     return app
@@ -181,18 +179,18 @@ def create_user(app, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def create_test_user(app):
     """テストユーザーを作成する"""
     test_data = {
-        'organization': 'uguis',  # 明示的に所属を設定
-        'email': 'shibuyamasahiko@gmail.com',
-        'password': 'giko8020@Z',
-        'user_name': '渋谷　正彦',
+        'organization': 'てすとくん01',  # 明示的に所属を設定
+        'email': 'test01@test.com',
+        'password': '00000000',
+        'user_name': '山田　太郎',
         'display_name': '渋谷',
-        'furigana': 'シブヤ　マサヒコ',
+        'furigana': 'ヤマダ　タロウ',
         'gender': 'male',
-        'date_of_birth': date(1971, 11, 20),
-        'post_code': '3430845',
-        'address': '埼玉県越谷市南越谷4-9-6　新越谷プラザビル201',
-        'phone': '07066330363',
-        'administrator': True
+        'date_of_birth': date(1988, 11, 10),
+        'post_code': '3430032',
+        'address': '埼玉県越谷市袋山95-1',
+        'phone': '09000000000',
+        'administrator': False
     }
     
     try:

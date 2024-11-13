@@ -47,7 +47,7 @@
                                         <td>{{ blog_category.category | truncate(20) }}</td>
                                         <td><a href="{{ url_for('category_posts', blog_category_id=blog_category.id) }}">{{ blog_category.count_posts(blog_category.id) }}</a></td>
                                         <td>
-                                            {% if current_user.is_administrator() %}
+                                            {% if current_user.is_administrator %}
                                             <a href="{{ url_for('blog_category', blog_category_id=blog_category.id) }}" class="btn btn-secondary">
                                             変更
                                             </a>

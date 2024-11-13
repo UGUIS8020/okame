@@ -11,7 +11,7 @@
         </div>
     </header>
 
-    {% if current_user.is_administrator() %}
+    {% if current_user.is_administrator %}
     <section id="menu">
         <div class="container my-3 py-3 bg-light">
             <div class="row">
@@ -42,21 +42,22 @@
                                         <th>名前</th>
                                         <th>メールアドレス</th>
                                         <th>電話番号</th>
-                                        <th>詳細</th>
+                                        <th>管理者</th>
                                         <th>変更</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% for user in users %}
                                     <tr>
-                                        <td>U{{ '%06d' % loop.index }}</td>  <!-- インデックスを6桁の番号で表示 -->
-                                        <td>{{ user.get('display_name', {}).get('S', '') | truncate(10) }}</td>
-                                        <td>{{ user.get('user_name', {}).get('S', '') | truncate(10) }}</td>
-                                        <td>{{ user.get('email', {}).get('S', '') | truncate(20) }}</td>
-                                        <td>{{ user.get('phone', {}).get('S', '') | truncate(15) }}</td>
+                                        <td>{{ '%06d' % loop.index }}</td>  <!-- インデックスを6桁の番号で表示 -->
+                                        <td>{{ user.display_name | truncate(10) }}</td>
+                                        <td>{{ user.user_name | truncate(10) }}</td>
+                                        <td>{{ user.email | truncate(20) }}</td>
+                                        <td>{{ user.phone | truncate(15) }}</td>
+                                        <td>{{ user.administrator }}</td>
                                         <td>
-                                            {% if current_user.administrator or current_user.id == user.get('user_id', {}).get('S', '') %}
-                                            <a href="{{ url_for('account', user_id=user.get('user_id', {}).get('S', '')) }}" 
+                                            {% if current_user.is_administrator or current_user.id == user.user_id %}
+                                            <a href="{{ url_for('account', user_id=user.user_id) }}" 
                                                class="btn btn-secondary">変更</a>
                                             {% endif %}
                                         </td>

@@ -116,7 +116,7 @@ def load_user(user_id):
 
 class RegistrationForm(FlaskForm):
     organization = SelectField('所属', choices=[('uguis', '鶯'),('other', 'その他')], default='uguis', validators=[DataRequired(message='所属を選択してください')])
-    display_name = StringField('表示ネーム LINE名など', validators=[DataRequired(), Length(min=3, max=30)])
+    display_name = StringField('表示ネーム LINE名など', validators=[DataRequired(message='表示名を入力してください'), Length(min=3, max=30, message='表示名は3文字以上30文字以下で入力してください')])
     user_name = StringField('ユーザー名', validators=[DataRequired()])
     furigana = StringField('フリガナ', validators=[DataRequired()])
     phone = StringField('電話番号', validators=[DataRequired(), Length(min=10, max=15, message='正しい電話番号を入力してください')])
@@ -129,23 +129,6 @@ class RegistrationForm(FlaskForm):
     gender = SelectField('性別', choices=[('', '性別'), ('male', '男性'), ('female', '女性'), ('other', 'その他')], validators=[DataRequired()])
     date_of_birth = DateField('生年月日', format='%Y-%m-%d', validators=[DataRequired()])
     submit = SubmitField('登録')
-
-    def validate_display_name(self, field):
-        try:
-            # display_nameのインデックスを使用して検索
-            response = app.dynamodb.query(
-                TableName=app.table_name,
-                IndexName='display_name-index',  # インデックスが必要
-                KeyConditionExpression='display_name = :display_name',
-                ExpressionAttributeValues={
-                    ':display_name': {'S': field.data}
-                }
-            )
-            if response.get('Items'):
-                raise ValidationError('入力された表示ネームは既に使われています。')
-        except Exception as e:
-            app.logger.error(f"Error validating display_name: {str(e)}")
-            raise ValidationError('表示ネームの確認中にエラーが発生しました。')
 
     def validate_email(self, field):
         try:
@@ -234,6 +217,11 @@ class User(UserMixin):
     @staticmethod
     def from_dynamodb_item(item):
         """DynamoDBのアイテムからUserオブジェクトを生成"""
+        raw_admin = item.get('administrator', {})
+        print(f"Raw administrator data: {raw_admin}")
+        admin_bool = raw_admin.get('BOOL', False)
+        print(f"Administrator bool value: {admin_bool}, type: {type(admin_bool)}")
+
         return User(
             user_id=item.get('user_id', {}).get('S'),
             display_name=item.get('display_name', {}).get('S'),
@@ -278,13 +266,16 @@ class User(UserMixin):
 
     def check_password(self, password):
         """パスワードの検証"""
-        return check_password_hash(self.password_hash, password)
-    
+        return check_password_hash(self.password_hash, password)   
+        
+    @property
     def is_authenticated(self):
-        if self.administrator == True:
-            return True
-        else:
-            return False
+        return True  # ログインしているユーザーは常にTrue
+
+    @property
+    def is_administrator(self):  # 管理者かどうかを確認するための別のプロパティ
+        print(f"Checking administrator status: {self.administrator}")
+        return self.administrator
 
 
 # DynamoDBからデータを取得してUserインスタンスを作成する関数
@@ -383,26 +374,7 @@ class LoginForm(FlaskForm):
 
 @app.route("/")
 @login_required
-def index():    
-    try:
-        # DynamoDBからポストを取得
-        response = app.table_posts.scan(  # 別のテーブルを想定
-            IndexName='created_at-index',  # 作成日時のインデックスを使用
-        )
-        
-        # 取得したアイテムを日付でソート
-        posts = sorted(
-            response.get('Items', []),
-            key=lambda x: x['created_at'],
-            reverse=True  # 降順
-        )
-        
-        app.logger.info(f"Retrieved {len(posts)} posts for index page")
-        return render_template("index.html", posts=posts)
-        
-    except Exception as e:
-        app.logger.error(f"Error retrieving posts: {str(e)}")
-        flash('投稿の取得中にエラーが発生しました。', 'error')
+def index():       
         return render_template("index.html", posts=[])
     
 
@@ -515,17 +487,7 @@ def login():
             if not user_data:
                 app.logger.warning(f"No user found for email: {form.email.data}")
                 flash('メールアドレスまたはパスワードが正しくありません。', 'error')
-                return render_template('login.html', form=form)
-
-            # 必要なフィールドの存在確認
-            required_fields = ['user_id', 'display_name', 'user_name', 'furigana', 
-                             'email', 'password', 'gender', 'date_of_birth', 
-                             'post_code', 'address', 'phone']
-            
-            if not all(field in user_data for field in required_fields):
-                app.logger.error(f"Missing required fields in user data for email: {form.email.data}")
-                flash('ユーザーデータの取得に失敗しました。', 'error')
-                return render_template('login.html', form=form)
+                return render_template('login.html', form=form)           
 
             try:
                 user = User(
@@ -689,87 +651,78 @@ def account(user_id):
         return redirect(url_for('user_maintenance'))
 
 
-@app.route("/create", methods=["GET", "POST"])
+    
+@app.route("/<string:post_id>/update", methods=["GET", "POST"])
 @login_required
-def create():
-    if request.method == "POST":
-        title = request.form.get("title")
-        body = request.form.get("body")
-        image = request.files.get("image")
-        category_id = request.form['category_id']
-
-        
-        if image and image.filename != '': 
-            original_filename = secure_filename(image.filename)
-            # ファイル名にユニークなIDを追加して変更
-            unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
-
-
-            # 画像を読み込む
-            img = Image.open(image)
-            max_width = 1500  # 最大横幅を1500pxに設定
-
-            # 画像の横幅が1500pxを超えている場合に縮小
-            if img.width > max_width:
-                # アスペクト比を維持したままリサイズ
-                new_height = int((max_width / img.width) * img.height)                
-                img = img.resize((max_width, new_height), Image.LANCZOS)
-
-            # リサイズされた画像をバイトIOオブジェクトに保存
-            img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format='JPEG')
-            img_byte_arr.seek(0)
-
-             # リサイズされた画像をS3にアップロード
-            app.s3.upload_fileobj(
-                img_byte_arr,
-                app.config['S3_BUCKET'],
-                unique_filename
+def update(post_id):
+    try:
+        # GETリクエスト: 投稿データを取得して編集フォームを表示
+        if request.method == "GET":
+            # DynamoDBから投稿を取得
+            response = app.dynamodb.get_item(
+                TableName=app.posts_table_name,  # 投稿用のテーブル名
+                Key={
+                    'post_id': {'S': post_id}
+                }
             )
-            image_url = f"{app.config['S3_LOCATION']}{unique_filename}"
+            
+            post = response.get('Item')
+            if not post:
+                flash('投稿が見つかりません', 'error')
+                return redirect(url_for('index'))
+                
+            # 投稿者かadminのみ編集可能
+            if post.get('user_id', {}).get('S') != current_user.get_id() and not current_user.is_administrator:
+                flash('編集権限がありません', 'error')
+                return redirect(url_for('index'))
+                
+            return render_template("update.html", post=post)
+    
+        # POSTリクエスト: 投稿を更新
         else:
-            image_url = None
-
-        new_post = Post(title=title, body=body, image_url=image_url, category_id=category_id)
-        db.session.add(new_post)
-        db.session.commit()
-        
+            current_time = datetime.now().isoformat()
+            
+            # 更新する項目を設定
+            update_expression_parts = []
+            expression_values = {}
+            
+            # タイトルの更新
+            if request.form.get("title"):
+                update_expression_parts.append("title = :title")
+                expression_values[':title'] = {'S': request.form.get("title")}
+                
+            # 本文の更新
+            if request.form.get("body"):
+                update_expression_parts.append("body = :body")
+                expression_values[':body'] = {'S': request.form.get("body")}
+                
+            # カテゴリーの更新
+            if request.form.get("category_id"):
+                update_expression_parts.append("category_id = :category_id")
+                expression_values[':category_id'] = {'S': request.form.get("category_id")}
+            
+            # 更新日時の設定
+            update_expression_parts.append("updated_at = :updated_at")
+            expression_values[':updated_at'] = {'S': current_time}
+            
+            # DynamoDBの更新
+            response = app.dynamodb.update_item(
+                TableName=app.posts_table_name,
+                Key={
+                    'post_id': {'S': post_id}
+                },
+                UpdateExpression="SET " + ", ".join(update_expression_parts),
+                ExpressionAttributeValues=expression_values,
+                ReturnValues="UPDATED_NEW"
+            )
+            
+            flash('投稿が更新されました', 'success')
+            return redirect(url_for('index'))
+            
+    except ClientError as e:
+        app.logger.error(f"DynamoDB error: {str(e)}")
+        flash('データベースエラーが発生しました', 'error')
         return redirect(url_for('index'))
-    
-    categories = Category.query.all()
-    return render_template("create.html", categories=categories)
-    
-@app.route("/<int:id>/update", methods=["GET", "POST"])
-@login_required
-def update(id):
-    post = Post.query.get(id)
-    if request.method == "GET":
-        return render_template("update.html", post=post)
-    
-    else:
-        post.title = request.form.get("title")
-        post.body = request.form.get("body")
-        post.category_id = request.form.get("category_id")
-        db.session.commit()
-        return redirect("/")
-    
-
-@app.route('/category_maintenance', methods=['GET', 'POST'])
-@login_required
-def category_maintenance():
-    page = request.args.get('page', 1, type=int)
-    blog_categories = BlogCategory.query.order_by(BlogCategory.id.asc()).paginate(page=page, per_page=10)
-    form = BlogCategoryForm()
-    if form.validate_on_submit():
-        blog_category = BlogCategory(category=form.category.data)
-        db.session.add(blog_category)
-        db.session.commit()
-        flash('ブログカテゴリが追加されました')
-        return redirect(url_for('category_maintenance'))
-    elif form.errors:
-        form.category.data = ""
-        flash(form.errors['category'][0])
-    return render_template('category_maintenance.html', blog_categories=blog_categories, form=form)
                             
 
 @app.route("/<int:id>/delete")
