@@ -11,7 +11,7 @@
         </div>
     </header>
 
-    {% if current_user.is_administrator() %}
+    {% if current_user.is_administrator %}
     <section id="menu">
         <div class="container my-3 py-3 bg-light">
             <div class="row">
@@ -56,9 +56,9 @@
                                         <td>{{ user.phone | truncate(15) }}</td>
                                         <td>{{ user.administrator }}</td>
                                         <td>
-                                            {% if current_user.is_administrator() or current_user.id == user.user_id %}
-                                            <a href="{{ url_for('account', user_id=user.id) }}" class="btn btn-secondary">変更</a>
-                                               
+                                            {% if current_user.is_administrator or current_user.id == user.user_id %}
+                                            <a href="{{ url_for('account', user_id=user.user_id) }}" 
+                                               class="btn btn-secondary">変更</a>
                                             {% endif %}
                                         </td>
                                     </tr>
