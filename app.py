@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, abort, render_template, redirect, url_for, flash
 from flask_wtf import FlaskForm
 from flask import render_template, request, redirect, url_for, flash, abort, session
 from flask_login import UserMixin, LoginManager, login_user, logout_user, login_required, current_user
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # グローバル変数の定義
 app = Flask(__name__)
 login_manager = LoginManager()
+
 
 def create_app():
     """アプリケーションの初期化と設定"""
@@ -83,6 +84,12 @@ def create_app():
         raise
 
 app = create_app()  # アプリケーションの初期化
+login_manager.init_app(app)
+login_manager.login_view = "login"  
+
+def localize_callback(*args, **kwargs):
+    return 'このページにアクセスするにはログインが必要です'
+login_manager.localize_callback = localize_callback
 
 def tokyo_time():
     return datetime.now(pytz.timezone('Asia/Tokyo'))
@@ -222,6 +229,7 @@ class User(UserMixin):
         admin_bool = raw_admin.get('BOOL', False)
         print(f"Administrator bool value: {admin_bool}, type: {type(admin_bool)}")
 
+
         return User(
             user_id=item.get('user_id', {}).get('S'),
             display_name=item.get('display_name', {}).get('S'),
@@ -316,6 +324,17 @@ def get_user_from_dynamodb(user_id):
     except Exception as e:
         print(f"Error fetching user from DynamoDB: {str(e)}")
         return None       
+    
+def is_administrator(self):
+    if self.administrator == "1":
+        return 1
+    else:
+        return 0    
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
 
 class LoginForm(FlaskForm):
     email = StringField(
@@ -678,6 +697,7 @@ def update(post_id):
                 
             return render_template("update.html", post=post)
     
+
         # POSTリクエスト: 投稿を更新
         else:
             current_time = datetime.now().isoformat()
@@ -725,6 +745,15 @@ def update(post_id):
         return redirect(url_for('index'))
                             
 
+@app.route('/user_maintenance')
+@login_required
+def user_maintenance():    
+    page = request.args.get('page', 1, type=int)
+    users = User.query.order_by(User.id).paginate(page=page, per_page=10)
+    return render_template('user_maintenance.html', users=users)
+ # ページネーション処理を追加
+
+    
 @app.route("/<int:id>/delete")
 @login_required
 def delete(id):
