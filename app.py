@@ -1,4 +1,4 @@
-from flask import Flask, abort, render_template, redirect, url_for, flash
+from flask import Flask
 from flask_wtf import FlaskForm
 from flask import render_template, request, redirect, url_for, flash, abort, session
 from flask_login import UserMixin, LoginManager, login_user, logout_user, login_required, current_user
@@ -30,15 +30,14 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 login_manager = LoginManager()
 
-
 def create_app():
     """アプリケーションの初期化と設定"""
-    try:
-        # 環境変数の読み込み
+    try:        
         load_dotenv()
-
-        # シークレットキーの設定
-        app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", os.urandom(24))
+        
+        # app.config["SECRET_KEY"] = os.getenv("SECRET_KEY") 
+        app.config["SECRET_KEY"] = ("your_secret_key_here")         
+        print(f"Secret key: {app.config['SECRET_KEY']}")
         
         # AWS S3の設定
         app.config['S3_BUCKET'] = os.getenv("S3_BUCKET")
@@ -70,8 +69,9 @@ def create_app():
 
         # Flask-Loginの設定
         login_manager.init_app(app)
+        login_manager.session_protection = "strong"
         login_manager.login_view = 'login'
-        login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
+        login_manager.login_message = 'このページにアクセスするにはログインが必要です。'        
         
         # DynamoDBテーブルの初期化
         init_tables()
@@ -84,42 +84,70 @@ def create_app():
         raise
 
 app = create_app()  # アプリケーションの初期化
-login_manager.init_app(app)
-login_manager.login_view = "login"  
-
-def localize_callback(*args, **kwargs):
-    return 'このページにアクセスするにはログインが必要です'
-login_manager.localize_callback = localize_callback
 
 def tokyo_time():
     return datetime.now(pytz.timezone('Asia/Tokyo'))
 
 @login_manager.user_loader
+# def load_user(user_id):
+#     app.logger.debug(f"Loading user with ID: {user_id}")
+#     # ユーザーIDが無ければNoneを返す（不要なDB アクセスを防ぐ）
+#     if not user_id:
+#         return None        
+#     try:
+#         response = app.dynamodb.get_item(
+#             TableName=app.table_name,
+#             Key={'user_id': {'S': user_id}}
+#             # Key={'user_id': user_id}
+#         )
+        
+#         # ユーザーが見つかった場合のみUserオブジェクトを作成
+#         if 'Item' in response:
+#             user_data = response['Item']
+#             return User(
+#                 user_id=user_data['user_id']['S'],
+#                 email=user_data['email']['S'],
+#                 password_hash=user_data['password']['S'],
+#                 administrator=bool(user_data.get('administrator', {}).get('BOOL', False))
+#             )
+#         else:
+#             app.logger.info(f"No user found for ID: {user_id}")
+#             return None
+                
+#     except Exception as e:
+#         # エラーはデバッグレベルでログを残す（エラー表示を抑制）
+#         app.logger.debug(f"User loader debug: {str(e)}")
+#         return None 
+
 def load_user(user_id):
+    app.logger.debug(f"Loading user with ID: {user_id}")
+    
+    if not user_id:
+        app.logger.warning("No user_id provided to load_user")
+        return None
+
     try:
         response = app.dynamodb.get_item(
             TableName=app.table_name,
             Key={'user_id': {'S': user_id}}
         )
+        
+        app.logger.debug(f"DynamoDB response: {response}")
+
         if 'Item' in response:
             user_data = response['Item']
-            return User(
-                user_id=user_data['user_id']['S'],
-                display_name=user_data['display_name']['S'],
-                user_name=user_data['user_name']['S'],
-                furigana=user_data['furigana']['S'],
-                email=user_data['email']['S'],
-                password_hash=user_data['password']['S'],
-                gender=user_data['gender']['S'],
-                date_of_birth=user_data['date_of_birth']['S'],
-                post_code=user_data['post_code']['S'],
-                address=user_data['address']['S'],
-                phone=user_data['phone']['S']
-            )
-        return None
+            user = User.from_dynamodb_item(user_data)
+            app.logger.info(f"User loaded successfully: {user.__dict__}")
+            return user
+        else:
+            app.logger.info(f"No user found for ID: {user_id}")
+            return None
+
     except Exception as e:
-        app.logger.error(f"Error loading user: {str(e)}")
+        app.logger.error(f"Error loading user with ID: {user_id}: {str(e)}", exc_info=True)
         return None
+
+
 
 class RegistrationForm(FlaskForm):
     organization = SelectField('所属', choices=[('uguis', '鶯'),('other', 'その他')], default='uguis', validators=[DataRequired(message='所属を選択してください')])
@@ -202,6 +230,7 @@ class User(UserMixin):
                  gender, date_of_birth, post_code, address, phone, 
                  organization='uguis', administrator=False, 
                  created_at=None, updated_at=None):
+        super().__init__()
         self.user_id = user_id
         self.display_name = display_name
         self.user_name = user_name
@@ -223,13 +252,6 @@ class User(UserMixin):
 
     @staticmethod
     def from_dynamodb_item(item):
-        """DynamoDBのアイテムからUserオブジェクトを生成"""
-        raw_admin = item.get('administrator', {})
-        print(f"Raw administrator data: {raw_admin}")
-        admin_bool = raw_admin.get('BOOL', False)
-        print(f"Administrator bool value: {admin_bool}, type: {type(admin_bool)}")
-
-
         return User(
             user_id=item.get('user_id', {}).get('S'),
             display_name=item.get('display_name', {}).get('S'),
@@ -250,43 +272,81 @@ class User(UserMixin):
 
     def to_dynamodb_item(self):
         """UserオブジェクトをDynamoDBアイテムに変換"""
-        return {
+        item = {
             "user_id": {"S": self.user_id},
             "organization": {"S": self.organization},
             "address": {"S": self.address},
             "administrator": {"BOOL": self.administrator},
             "created_at": {"S": self.created_at},
-            "date_of_birth": {"S": self.date_of_birth if self.date_of_birth else ''},
             "display_name": {"S": self.display_name},
             "email": {"S": self.email},
             "furigana": {"S": self.furigana},
             "gender": {"S": self.gender},
-            "password": {"S": self.password_hash},  # ハッシュ化されたパスワードを保存
+            "password": {"S": self.password_hash},
             "phone": {"S": self.phone},
             "post_code": {"S": self.post_code},
             "updated_at": {"S": self.updated_at},
             "user_name": {"S": self.user_name}
         }
+        if self.date_of_birth:  # Noneの場合はスキップ
+            item["date_of_birth"] = {"S": self.date_of_birth}
+        return item
 
-    def set_password(self, password):
-        """パスワードをハッシュ化して設定"""
+    def set_password(self, password):        
         self.password_hash = generate_password_hash(password)
 
-    def check_password(self, password):
-        """パスワードの検証"""
-        return check_password_hash(self.password_hash, password)   
-        
+    def check_password(self, password):        
+        return check_password_hash(self.password_hash, password) 
+
     @property
-    def is_authenticated(self):
-        return True  # ログインしているユーザーは常にTrue
+    def password(self):
+        raise AttributeError('password is not a readable attribute')
 
     @property
     def is_administrator(self):  # 管理者かどうかを確認するための別のプロパティ
         print(f"Checking administrator status: {self.administrator}")
-        return self.administrator
+        return self.administrator       
 
 
 # DynamoDBからデータを取得してUserインスタンスを作成する関数
+# def get_user_from_dynamodb(user_id):
+#     try:
+#         # DynamoDBからユーザーデータを取得
+#         response = app.dynamodb.get_item(
+#             TableName=app.table_name,
+#             Key={"user_id": {"S": user_id}}
+#         )
+        
+#         # データが存在しない場合の処理
+#         if 'Item' not in response:
+#             app.logger.info(f"User not found in DynamoDB for user_id: {user_id}")
+#             return None
+
+#         item = response['Item']
+
+#         # DynamoDBのデータをUserクラスのインスタンスに変換
+#         user = User(
+#             user_id=item['user_id']['S'],
+#             display_name=item['display_name']['S'],
+#             user_name=item['user_name']['S'],
+#             furigana=item['furigana']['S'],
+#             email=item['email']['S'],
+#             password_hash=item['password']['S'],  # パスワードハッシュを設定
+#             gender=item['gender']['S'],
+#             date_of_birth=datetime.strptime(item['date_of_birth']['S'], '%Y-%m-%d').date(),
+#             post_code=item['post_code']['S'],
+#             address=item['address']['S'],
+#             phone=item['phone']['S'],
+#             organization=item.get('organization', {}).get('S', 'uguis'),
+#             administrator=bool(item.get('administrator', {}).get('BOOL', False))  # ブール型に変換
+#         )
+        
+#         return user
+
+#     except Exception as e:
+#         app.logger.error(f"Error fetching user from DynamoDB for user_id: {user_id}: {str(e)}", exc_info=True)
+#         return None     
+
 def get_user_from_dynamodb(user_id):
     try:
         # DynamoDBからユーザーデータを取得
@@ -295,61 +355,25 @@ def get_user_from_dynamodb(user_id):
             Key={"user_id": {"S": user_id}}
         )
         
-        # データが存在しない場合の処理
+        # データが存在しない場合
         if 'Item' not in response:
-            print("User not found in DynamoDB.")
+            app.logger.info(f"User not found in DynamoDB for user_id: {user_id}")
             return None
 
         item = response['Item']
 
         # DynamoDBのデータをUserクラスのインスタンスに変換
-        user = User(
-            user_id=item['user_id']['S'],
-            display_name=item['display_name']['S'],
-            user_name=item['user_name']['S'],
-            furigana=item['furigana']['S'],
-            email=item['email']['S'],
-            password_hash=item['password']['S'],  # パスワードハッシュを設定
-            gender=item['gender']['S'],
-            date_of_birth=datetime.strptime(item['date_of_birth']['S'], '%Y-%m-%d').date(),
-            post_code=item['post_code']['S'],
-            address=item['address']['S'],
-            phone=item['phone']['S'],
-            organization=item.get('organization', {}).get('S', 'uguis'),
-            administrator=bool(item.get('administrator', {}).get('BOOL', False))  # ブール型に変換
-        )
-        
+        user = User.from_dynamodb_item(item)
+        app.logger.debug(f"User successfully loaded for user_id: {user_id}")
         return user
 
     except Exception as e:
-        print(f"Error fetching user from DynamoDB: {str(e)}")
-        return None       
-    
-def is_administrator(self):
-    if self.administrator == "1":
-        return 1
-    else:
-        return 0    
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
+        app.logger.error(f"Error fetching user from DynamoDB for user_id: {user_id}: {str(e)}", exc_info=True)
+        return None  
 
 class LoginForm(FlaskForm):
-    email = StringField(
-        'メールアドレス',
-        validators=[
-            DataRequired(message='メールアドレスを入力してください'),
-            Email(message='正しいメールアドレスの形式で入力してください')
-        ]
-    )
-    password = PasswordField(
-        'パスワード',
-        validators=[
-            DataRequired(message='パスワードを入力してください')
-        ]
-    )
+    email = StringField('メールアドレス', validators=[DataRequired(message='メールアドレスを入力してください'), Email(message='正しいメールアドレスの形式で入力してください')])
+    password = PasswordField('パスワード', validators=[DataRequired(message='パスワードを入力してください')])
     remember = BooleanField('ログイン状態を保持する')
     submit = SubmitField('ログイン')
 
@@ -389,11 +413,13 @@ class LoginForm(FlaskForm):
 
     def get_user(self):
         """ログイン成功時のユーザー情報を返す"""
-        return self.user
+        return self.user    
+
 
 @app.route("/")
-@login_required
-def index():       
+def index(): 
+        app.logger.info(f"User ID: {current_user.get_id() if current_user.is_authenticated else 'Anonymous'}, is_authenticated: {current_user.is_authenticated}")      
+        app.logger.debug(f"Accessing index - User ID: {current_user.get_id()}, is_authenticated: {current_user.is_authenticated}")
         return render_template("index.html", posts=[])
     
 
@@ -481,14 +507,16 @@ def signup():
             for error in errors:
                 flash(f'{form[field].label.text}: {error}', 'error')
     
-    return render_template('signup.html', form=form)
+    return render_template('signup.html', form=form)       
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+
     if current_user.is_authenticated:
         return redirect(url_for('index'))
 
-    form = LoginForm(dynamodb_table=app.table)
+    # form = LoginForm(dynamodb_table=app.table)
+    form = LoginForm()
     if form.validate_on_submit():
         try:
             # メールアドレスでユーザーを取得
@@ -520,8 +548,11 @@ def login():
                     date_of_birth=user_data['date_of_birth'],
                     post_code=user_data['post_code'],
                     address=user_data['address'],
-                    phone=user_data['phone']
+                    phone=user_data['phone'],
+                    administrator=user_data['administrator']
                 )
+                
+                                
             except KeyError as e:
                 app.logger.error(f"Error creating user object: {str(e)}")
                 flash('ユーザーデータの読み込みに失敗しました。', 'error')
@@ -533,15 +564,18 @@ def login():
                 return render_template('login.html', form=form)
 
             if user.check_password(form.password.data):
-                login_user(user, remember=form.remember.data)
-                app.logger.info(f"User logged in successfully - ID: {user.user_id}")
+                login_user(user, remember=form.remember.data)  
+                app.logger.debug(f"Session after login: {session}")  # セッション情報を確認
+                app.logger.info(f"User logged in: {user.get_id()}")
+                app.logger.debug(f"Session data: {session}")                                           
+                app.logger.info(f"User logged in successfully - ID: {user.user_id}, is_authenticated: {current_user.is_authenticated}")
                 flash('ログインに成功しました。', 'success')
                 
                 next_page = request.args.get('next')
                 if not next_page or not is_safe_url(next_page):
                     next_page = url_for('index')
-                return redirect(next_page)
-            
+                return redirect(next_page)            
+                        
             app.logger.warning(f"Invalid password attempt for email: {form.email.data}")
             time.sleep(random.uniform(0.1, 0.3))
             flash('メールアドレスまたはパスワードが正しくありません。', 'error')
@@ -551,6 +585,7 @@ def login():
             flash('ログイン処理中にエラーが発生しました。', 'error')
     
     return render_template('login.html', form=form)
+    
 
 # セキュアなリダイレクト先かを確認する関数
 def is_safe_url(target):
@@ -567,14 +602,14 @@ def is_safe_url(target):
 
         
 @app.route("/logout")
-@login_required
+# @login_required
 def logout():
     logout_user()
     return redirect("/login")
 
 
 @app.route("/user_maintenance", methods=["GET", "POST"])
-@login_required
+# @login_required
 def user_maintenance():
     try:
         # テーブルからすべてのユーザーを取得
@@ -598,7 +633,7 @@ def user_maintenance():
 
 
 @app.route('/<string:user_id>/account', methods=['GET', 'POST'])  # UUIDは文字列なのでintからstringに変更
-@login_required
+# @login_required
 def account(user_id):
     # DynamoDBからユーザー情報を取得
     try:
@@ -671,91 +706,11 @@ def account(user_id):
 
 
     
-@app.route("/<string:post_id>/update", methods=["GET", "POST"])
-@login_required
-def update(post_id):
-    try:
-        # GETリクエスト: 投稿データを取得して編集フォームを表示
-        if request.method == "GET":
-            # DynamoDBから投稿を取得
-            response = app.dynamodb.get_item(
-                TableName=app.posts_table_name,  # 投稿用のテーブル名
-                Key={
-                    'post_id': {'S': post_id}
-                }
-            )
-            
-            post = response.get('Item')
-            if not post:
-                flash('投稿が見つかりません', 'error')
-                return redirect(url_for('index'))
-                
-            # 投稿者かadminのみ編集可能
-            if post.get('user_id', {}).get('S') != current_user.get_id() and not current_user.is_administrator:
-                flash('編集権限がありません', 'error')
-                return redirect(url_for('index'))
-                
-            return render_template("update.html", post=post)
-    
 
-        # POSTリクエスト: 投稿を更新
-        else:
-            current_time = datetime.now().isoformat()
-            
-            # 更新する項目を設定
-            update_expression_parts = []
-            expression_values = {}
-            
-            # タイトルの更新
-            if request.form.get("title"):
-                update_expression_parts.append("title = :title")
-                expression_values[':title'] = {'S': request.form.get("title")}
-                
-            # 本文の更新
-            if request.form.get("body"):
-                update_expression_parts.append("body = :body")
-                expression_values[':body'] = {'S': request.form.get("body")}
-                
-            # カテゴリーの更新
-            if request.form.get("category_id"):
-                update_expression_parts.append("category_id = :category_id")
-                expression_values[':category_id'] = {'S': request.form.get("category_id")}
-            
-            # 更新日時の設定
-            update_expression_parts.append("updated_at = :updated_at")
-            expression_values[':updated_at'] = {'S': current_time}
-            
-            # DynamoDBの更新
-            response = app.dynamodb.update_item(
-                TableName=app.posts_table_name,
-                Key={
-                    'post_id': {'S': post_id}
-                },
-                UpdateExpression="SET " + ", ".join(update_expression_parts),
-                ExpressionAttributeValues=expression_values,
-                ReturnValues="UPDATED_NEW"
-            )
-            
-            flash('投稿が更新されました', 'success')
-            return redirect(url_for('index'))
-            
-    except ClientError as e:
-        app.logger.error(f"DynamoDB error: {str(e)}")
-        flash('データベースエラーが発生しました', 'error')
-        return redirect(url_for('index'))
                             
 
-@app.route('/user_maintenance')
-@login_required
-def user_maintenance():    
-    page = request.args.get('page', 1, type=int)
-    users = User.query.order_by(User.id).paginate(page=page, per_page=10)
-    return render_template('user_maintenance.html', users=users)
- # ページネーション処理を追加
-
-    
 @app.route("/<int:id>/delete")
-@login_required
+# @login_required
 def delete(id):
     post = Post.query.get(id)
     db.session.delete(post)
@@ -764,6 +719,6 @@ def delete(id):
 
 
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
+    with app.app_context():    
+        pass    
     app.run(debug=True)
