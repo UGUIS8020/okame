@@ -89,13 +89,13 @@
                 <a class="nav-link" href="#">カテゴリ</a>
                 </li>                
                 <li class="nav-item">
-                <a class="nav-link" href="#">ユーザー</a>
+                <a class="nav-link" href="{{ url_for('user_maintenance') }}">ユーザー</a>
                 </li>
                 <li class="nav-item">
                   <a class="nav-link" href="{{ url_for('logout') }}">ログアウト</a>
                 </li>    
-                <span class="navbar-text ms-3">
-                    ログインユーザー
+                <span class="navbar-text ms-3">                    
+                    {{ current_user.display_name }}
                 </span>           
             </ul>
           </div>

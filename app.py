@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, abort, render_template, redirect, url_for, flash
 from flask_wtf import FlaskForm
 from flask import render_template, request, redirect, url_for, flash, request, abort
 from flask_sqlalchemy import SQLAlchemy
@@ -39,6 +39,11 @@ migrate = Migrate(app, db)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
+login_manager.login_view = "login"  
+
+def localize_callback(*args, **kwargs):
+    return 'このページにアクセスするにはログインが必要です'
+login_manager.localize_callback = localize_callback
 
 def tokyo_time():
     return datetime.now(pytz.timezone('Asia/Tokyo'))
@@ -110,6 +115,12 @@ class User(UserMixin, db.Model):
     def age(self):
         today = date.today()
         return today.year - self.date_of_birth.year - ((today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day))
+
+    def is_administrator(self):
+        if self.administrator == "1":
+            return 1
+        else:
+            return 0    
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -237,6 +248,15 @@ def update(id):
         post.category_id = request.form.get("category_id")
         db.session.commit()
         return redirect("/")
+    
+@app.route('/user_maintenance')
+@login_required
+def user_maintenance():    
+    page = request.args.get('page', 1, type=int)
+    users = User.query.order_by(User.id).paginate(page=page, per_page=10)
+    return render_template('user_maintenance.html', users=users)
+ # ページネーション処理を追加
+
     
 @app.route("/<int:id>/delete")
 @login_required
