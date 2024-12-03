@@ -53,7 +53,7 @@ class RegistrationForm(FlaskForm):
     password = PasswordField('パスワード', validators=[DataRequired(), Length(min=8, message='Password must be at least 8 characters long'), EqualTo('pass_confirm', message='パスワードが一致していません')])
     pass_confirm = PasswordField('パスワード(確認)', validators=[DataRequired()])
     gender = SelectField('性別', choices=[('male', '男性'), ('female', '女性'), ('other', 'その他'), ('prefer_not_to_say', '答えたくない')], validators=[DataRequired()])
-    date_of_birth = DateField('生年月日', format='%Y%m%d', validators=[DataRequired()])
+    date_of_birth = DateField('生年月日', format='%Y-%m-%d', validators=[DataRequired()])
     submit = SubmitField('登録')
 
     def validate_display_name(self, field):
@@ -158,7 +158,7 @@ class BlogPost(db.Model):
         self.summary = summary
 
     def __repr__(self):
-        return f"PostID: {self.id}, Title: {self.title}, Author: {self.author} \n"
+        return f"PostID: {self.id}, Title: {self.title}, Author: {self.user_id} \n"
     
 @login_manager.user_loader
 def load_user(user_id):
@@ -176,26 +176,56 @@ def index():
     return render_template("index.html", posts=posts)
     
 
-@app.route('/signup', methods=['GET','POST'])
-def signup():    
-    form = RegistrationForm()    
+# @app.route('/signup', methods=['GET','POST'])
+# def signup():    
+#     form = RegistrationForm()    
 
+#     if form.validate_on_submit():
+#         hashed_password = generate_password_hash(form.password.data, method='pbkdf2:sha256')
+#         user = User(
+#             email=form.email.data,
+#             user_name=form.user_name.data,
+#             display_name=form.display_name.data,
+#             furigana=form.furigana.data,
+#             password=hashed_password,  # ハッシュ化されたパスワードを使用
+#             gender=form.gender.data,
+#             date_of_birth=form.date_of_birth.data,
+#             administrator="0"  # もしadministratorフィールドが必要であれば
+#         )
+#         db.session.add(user)
+#         db.session.commit()
+#         flash('ユーザーが登録されました')
+#         return redirect(url_for('login'))
+#     return render_template('signup.html', form=form)
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    form = RegistrationForm()
+    
     if form.validate_on_submit():
-        hashed_password = generate_password_hash(form.password.data, method='pbkdf2:sha256')
-        user = User(
-            email=form.email.data,
-            user_name=form.user_name.data,
-            display_name=form.display_name.data,
-            furigana=form.furigana.data,
-            password=hashed_password,  # ハッシュ化されたパスワードを使用
-            gender=form.gender.data,
-            date_of_birth=form.date_of_birth.data,
-            administrator="0"  # もしadministratorフィールドが必要であれば
-        )
-        db.session.add(user)
-        db.session.commit()
-        flash('ユーザーが登録されました')
-        return redirect(url_for('login'))
+        try:
+            hashed_password = generate_password_hash(form.password.data, method='pbkdf2:sha256')
+            user = User(
+                email=form.email.data,
+                user_name=form.user_name.data,
+                display_name=form.display_name.data,
+                furigana=form.furigana.data,
+                password=hashed_password,
+                gender=form.gender.data,
+                date_of_birth=form.date_of_birth.data,                
+                administrator=False
+            )
+            db.session.add(user)
+            db.session.commit()
+            flash('ユーザーが登録されました')
+            return redirect(url_for('login'))
+        except Exception as e:
+            db.session.rollback()
+            print(f"Database error: {e}")
+            flash('データベースエラーが発生しました')
+    else:
+        print(form.errors)  # フォームのエラーを確認
+    
     return render_template('signup.html', form=form)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -206,8 +236,14 @@ def login():
         password = form.password.data
 
         user = User.query.filter_by(email=email).first()
-        if user and check_password_hash(user.password, password):
+        print(f"User found: {user}")
+        if user:
+                print(f"Stored password hash: {user.password}")
+                print(f"Password match: {check_password_hash(user.password, password)}")
+
+        if user and check_password_hash(user.password, password):            
             login_user(user)
+            print("User logged in:", current_user.is_authenticated)
             next_page = request.args.get('next')
             return redirect(next_page) if next_page else redirect("/")
         else:
@@ -303,6 +339,8 @@ def category_maintenance():
         form.category.data = ""
         flash(form.errors['category'][0])
     return render_template('category_maintenance.html', blog_categories=blog_categories, form=form)
+
+
                             
 
 @app.route("/<int:id>/delete")
